@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "OpenTicket Relacionamentos",
@@ -13,7 +14,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
