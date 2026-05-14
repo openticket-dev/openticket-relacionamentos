@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DNA_DIMENSION_LABELS, type DnaDimension } from "@/lib/dna-questions";
 import { gqlRequest, GqlClientError } from "@/lib/gql-client";
+import { DnaTraitsRadar3D } from "@/components/DnaTraitsRadar3D";
 
 const MY_DNA_QUERY = /* GraphQL */ `
   query MyDNA {
@@ -135,6 +136,8 @@ export default function DnaResultadoPage() {
             Os 5 traços que vão pesar nos seus matches.
           </p>
         </header>
+
+        <DnaTraitsRadar3D traits={traits} />
 
         <ul className="space-y-5">
           {dims.map((d) => {
