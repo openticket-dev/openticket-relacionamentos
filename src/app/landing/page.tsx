@@ -35,6 +35,12 @@ export default function LandingPage() {
               >
                 Criar perfil
               </Link>
+              <Link
+                href="/onboarding/dna"
+                className="px-6 py-3 rounded-lg border-2 border-fuchsia-400 text-fuchsia-700 dark:text-fuchsia-300 font-medium hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/40 transition-colors"
+              >
+                Descobrir meu DNA
+              </Link>
             </div>
           </div>
           <HeroScene3D />
