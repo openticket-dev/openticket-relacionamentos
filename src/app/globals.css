@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Scan @openticket-dev/ui (FooterBase, etc) so utility classes inside the shared
+   package are picked up by Tailwind v4. Without this, classes like lg:grid-cols-12,
+   lg:col-span-3 get purged and the footer collapses to mobile layout. */
+@source "../../node_modules/@openticket-dev/ui/dist/**/*.js";
+
 /* Brand: magenta #d946ef (fuchsia-500) — relacionamentos vertical */
 :root {
   --background: 292 30% 99%;
