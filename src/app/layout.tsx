@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { RelacionamentosApolloProvider } from "@/lib/apollo/Provider";
 
 export const metadata: Metadata = {
   title: "OpenTicket Relacionamentos",
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="min-h-screen bg-background text-foreground antialiased">
-        <AppShell>{children}</AppShell>
+        <RelacionamentosApolloProvider>
+          <AppShell>{children}</AppShell>
+        </RelacionamentosApolloProvider>
       </body>
     </html>
   );
