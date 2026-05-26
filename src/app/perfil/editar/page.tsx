@@ -171,7 +171,7 @@ export default function PerfilEditarPage() {
             Min 2 fotos recomendado. Upload pro R2 sera ligado em W-R-4.
           </p>
           <div className="grid grid-cols-3 gap-2">
-            {form.photos.map((p) => (
+            {form.photos.map((p, idx) => (
               <div
                 key={p.id}
                 className="relative aspect-square rounded-lg overflow-hidden border border-border bg-muted"
@@ -179,7 +179,7 @@ export default function PerfilEditarPage() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={p.previewUrl}
-                  alt=""
+                  alt={`Foto de perfil ${idx + 1}`}
                   className="w-full h-full object-cover"
                 />
                 <button
