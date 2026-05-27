@@ -149,16 +149,12 @@ export default function LikesPage() {
             Premium libera a lista completa, super-likes ilimitados e perfil
             destacado.
           </p>
-          <button
-            disabled
-            title="Stripe checkout em W-R-7"
-            className="px-5 py-2 rounded-lg bg-fuchsia-600 text-white font-medium opacity-60 cursor-not-allowed"
+          <Link
+            href="/premium"
+            className="inline-block px-5 py-2 rounded-lg bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 transition-colors"
           >
-            Assinar premium (em breve)
-          </button>
-          <p className="text-xs text-muted-foreground mt-2">
-            Checkout Stripe sera ligado em W-R-7.
-          </p>
+            Ver planos premium
+          </Link>
         </div>
       )}
     </main>
