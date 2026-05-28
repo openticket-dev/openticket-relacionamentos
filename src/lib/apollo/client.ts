@@ -26,6 +26,13 @@ export function getApolloClient(): ApolloClient {
       credentials: "include",
     }),
     cache: new InMemoryCache(),
+    // J9 (V5 OPS, 2026-05-28): errorPolicy:'all' aplicado preventivamente nos
+    // 3 verbos via defaultOptions — equivalente, em nível de client default,
+    // ao pattern aplicado por call site em openticket-igreja PR#48,
+    // gastronomia PR#41, esportes PR#31 e varejo PR#46. Quando as waves
+    // W-R-1..8 introduzirem useQuery em screens reais, herdam errorPolicy:'all'
+    // automaticamente — não precisa repetir por call site. Override apenas
+    // se 'none' (strict) for explicitamente desejado num call específico.
     defaultOptions: {
       watchQuery: { fetchPolicy: "cache-and-network", errorPolicy: "all" },
       query: { fetchPolicy: "network-only", errorPolicy: "all" },
