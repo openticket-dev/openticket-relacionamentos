@@ -43,7 +43,7 @@ export default function HubClient() {
             OpenTicket · Relacionamentos
           </div>
           <h1 className="mb-6 text-5xl font-bold leading-[1.05] md:text-7xl">
-            Conexao,{" "}
+            Conexão,{" "}
             <span style={{ color: "#fbb6ce" }}>match</span>, amor.
           </h1>
           <p className="mb-10 text-lg text-white/70 md:text-xl">

@@ -1,4 +1,4 @@
-// Relacionamentos — Chat Configuracoes
+// Relacionamentos — Chat Configurações
 // Sprint M8-2. Silenciar, bloqueados, deletar conversa, leitura, online status.
 
 "use client";
@@ -24,7 +24,7 @@ export default function ChatConfigPage() {
         >
           ← Conversas
         </Link>
-        <h1 className="font-semibold text-xl">Configuracoes do Chat</h1>
+        <h1 className="font-semibold text-xl">Configurações do Chat</h1>
       </header>
 
       <section className="space-y-1 mb-8">
@@ -166,7 +166,7 @@ export default function ChatConfigPage() {
           Zona de risco
         </h2>
         <button className="w-full p-4 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-900/30">
-          Limpar historico de todas as conversas
+          Limpar histórico de todas as conversas
         </button>
       </section>
     </main>

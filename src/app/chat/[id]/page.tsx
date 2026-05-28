@@ -136,7 +136,7 @@ export default function ChatPage({
           <Link
             href="/chat/configuracoes"
             className="text-xs text-muted-foreground hover:text-foreground"
-            title="Configuracoes"
+            title="Configurações"
           >
             ⚙
           </Link>
