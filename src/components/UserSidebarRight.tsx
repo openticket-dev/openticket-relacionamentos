@@ -7,9 +7,16 @@
 // Sections: Perfil quick info, Status match, Preferencias quick-toggle, Privacidade.
 //
 // Pendente futuro sprint:
-// - useSession()/useUserContext() pra dados reais (placeholder Carregando... ate la)
+// - useSession()/useUserContext() pra dados reais (W-R-4)
 // - Quick-toggles persistem preferencia em backend (mutation GraphQL)
 // - Status match puxa myMatches GraphQL (W-R-2)
+//
+// IMPORTANTE (fix probe r31): a secao Perfil NAO renderiza um "Carregando..."
+// perene. Sem fonte de dados client-side ainda (useSession liga em W-R-4), um
+// placeholder de loading que nunca resolve faz o probe de hydration do shell
+// classificar a rota inteira como hydration_timeout / hydration_retry e travar
+// ~30s esperando o estado assentar. Renderizamos um estado HONESTO e estavel
+// (link "Editar perfil") em vez de loop de loading — zero-mock, sem dado fake.
 
 "use client";
 
@@ -35,8 +42,10 @@ export function UserSidebarRight({ className }: UserSidebarRightProps) {
         <section>
           <h3 className="text-sm font-semibold mb-2">Meu Perfil</h3>
           <div className="text-xs text-[hsl(var(--muted-foreground))]">
-            {/* TODO: substituir por useSession()/useUserContext() em sprint W-R-4 */}
-            Carregando...
+            {/* W-R-4 liga useSession()/useUserContext() aqui. Ate la, estado
+                honesto e estavel — NUNCA um "Carregando..." perene, que o probe
+                de hydration interpreta como timeout e trava 30s na rota. */}
+            Abra seu perfil para ver seus dados.
           </div>
           <Link
             href="/perfil"
