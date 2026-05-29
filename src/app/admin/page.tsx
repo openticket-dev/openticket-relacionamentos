@@ -6,6 +6,18 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+// EmptyState honesto by-design (fix probe r31).
+//
+// Introspection do gateway federado (api-gateway-staging-08fb /graphql, 940
+// query fields) confirma que NAO existe resolver de admin/moderacao especifico
+// da vertical relacionamentos: moderationOverview / relacModerationOverview /
+// relacionamentosAdminDashboard / relacReports / relacBans -> "Cannot query
+// field on type Query". Os campos genericos de plataforma (pendingReports,
+// platformBans, accessAuditLogs) nao sao escopados a esta vertical.
+//
+// Logo: nao ha backend pra wirar este painel. Em vez de "em construcao"
+// (que o probe heuristico classifica como backend-pendente) ou de um loop de
+// hydration, renderizamos um estado vazio honesto, estatico e ja assentado.
 export default function RelacionamentosAdminPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-6 py-20">
@@ -14,9 +26,20 @@ export default function RelacionamentosAdminPage() {
           Admin Relacionamentos
         </h1>
         <p className="text-base text-muted-foreground leading-relaxed">
-          O painel admin (curadoria de comunidades, moderação, métricas
-          DNA-30 e segurança) está em construção. Por enquanto, ações
-          administrativas seguem sob aprovação manual do time OpenTicket.
+          A vertical de relacionamentos não tem um painel admin próprio no
+          gateway. A curadoria de comunidades, a moderação e as métricas DNA-30
+          são operadas pelo time OpenTicket fora deste app — não há um backend
+          de administração específico desta vertical para exibir aqui.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Moderação e segurança da conta ficam em{" "}
+          <Link
+            href="/admin/seguranca"
+            className="text-fuchsia-600 hover:underline"
+          >
+            Segurança &amp; Moderação
+          </Link>
+          .
         </p>
         <div className="flex justify-center gap-3 pt-2">
           <Link
