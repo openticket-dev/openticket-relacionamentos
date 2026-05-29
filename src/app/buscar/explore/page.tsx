@@ -1,83 +1,130 @@
-// Relacionamentos — Explore (perfis afinidade ML)
-// Sprint M8-1: modo explore — grid sugestoes alta-afinidade.
-// Backend ML scoring: W-R-3 (algoritmo matching). Por agora: PLACEHOLDER ranqueado por compatibility.
+// Relacionamentos — Explore (perfis afinidade)
+// WIRE_REAL: grid de sugestoes via GraphQL discoverProfiles, ranqueado por score.
+// Os "motivos" de afinidade vem de matchedInterests (interesses em comum reais).
+// Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
 
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SUBVERTICALS } from "@/lib/subverticals";
 
-type ExploreProfile = {
+const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
+  query DiscoverProfilesExplore($filters: DiscoveryFiltersInput) {
+    discoverProfiles(filters: $filters) {
+      profiles {
+        id
+        displayName
+        avatar
+        age
+        distance
+        bio
+        interests
+        matchedInterests
+        score
+      }
+      nextCursor
+    }
+  }
+`;
+
+interface DiscoveryProfile {
   id: string;
-  name_PLACEHOLDER: string;
-  age_PLACEHOLDER: number;
-  city_PLACEHOLDER: string;
-  vertical: string;
-  affinity_PLACEHOLDER: number;
-  reasons_PLACEHOLDER: string[];
-};
+  displayName: string | null;
+  avatar: string | null;
+  age: number | null;
+  distance: number | null;
+  bio: string | null;
+  interests: string[];
+  matchedInterests: string[];
+  score: number;
+}
 
-const PLACEHOLDER_EXPLORE: ExploreProfile[] = [
-  {
-    id: "ex-1",
-    name_PLACEHOLDER: "Sugestao 1",
-    age_PLACEHOLDER: 27,
-    city_PLACEHOLDER: "Sao Paulo, SP",
-    vertical: "dating",
-    affinity_PLACEHOLDER: 94,
-    reasons_PLACEHOLDER: [
-      "Mesmos 3 interesses",
-      "Mesma cidade",
-      "Idade compativel",
-    ],
-  },
-  {
-    id: "ex-2",
-    name_PLACEHOLDER: "Sugestao 2",
-    age_PLACEHOLDER: 30,
-    city_PLACEHOLDER: "Belo Horizonte, MG",
-    vertical: "fitness",
-    affinity_PLACEHOLDER: 88,
-    reasons_PLACEHOLDER: ["Treina no mesmo horario", "Modalidades em comum"],
-  },
-  {
-    id: "ex-3",
-    name_PLACEHOLDER: "Sugestao 3",
-    age_PLACEHOLDER: 24,
-    city_PLACEHOLDER: "Recife, PE",
-    vertical: "music",
-    affinity_PLACEHOLDER: 85,
-    reasons_PLACEHOLDER: ["Bandas favoritas em comum"],
-  },
-  {
-    id: "ex-4",
-    name_PLACEHOLDER: "Sugestao 4",
-    age_PLACEHOLDER: 35,
-    city_PLACEHOLDER: "Porto Alegre, RS",
-    vertical: "business",
-    affinity_PLACEHOLDER: 82,
-    reasons_PLACEHOLDER: ["Stack tecnica similar", "Estagio empresa similar"],
-  },
-];
+type LoadState = "loading" | "ready" | "empty" | "error";
+type SortMode = "affinity" | "nearby";
 
-type SortMode = "affinity" | "newest" | "nearby";
+async function fetchDiscovery(
+  subverticais: string[] | null,
+): Promise<DiscoveryProfile[]> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      query: DISCOVER_PROFILES_QUERY,
+      variables: {
+        filters: {
+          limit: 30,
+          cursor: 0,
+          ...(subverticais && subverticais.length > 0 ? { subverticais } : {}),
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    data?: { discoverProfiles: { profiles: DiscoveryProfile[] } | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  return json.data?.discoverProfiles?.profiles ?? [];
+}
 
 export default function ExplorePage() {
   const [sort, setSort] = useState<SortMode>("affinity");
   const [filterVertical, setFilterVertical] = useState<string>("all");
 
+  const [state, setState] = useState<LoadState>("loading");
+  const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setState("loading");
+      try {
+        const subverticais =
+          filterVertical === "all" ? null : [filterVertical];
+        const items = await fetchDiscovery(subverticais);
+        if (cancelled) return;
+        if (items.length === 0) {
+          setProfiles([]);
+          setState("empty");
+          return;
+        }
+        setProfiles(items);
+        setState("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const msg =
+          err instanceof Error ? err.message : "Falha ao carregar sugestoes";
+        setErrorMessage(msg);
+        setState("error");
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [filterVertical]);
+
   const list = useMemo(() => {
-    const filtered = PLACEHOLDER_EXPLORE.filter(
-      (p) => filterVertical === "all" || p.vertical === filterVertical,
-    );
+    const sorted = [...profiles];
     if (sort === "affinity") {
-      return [...filtered].sort(
-        (a, b) => b.affinity_PLACEHOLDER - a.affinity_PLACEHOLDER,
+      sorted.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    } else if (sort === "nearby") {
+      sorted.sort(
+        (a, b) =>
+          (a.distance ?? Number.POSITIVE_INFINITY) -
+          (b.distance ?? Number.POSITIVE_INFINITY),
       );
     }
-    return filtered;
-  }, [sort, filterVertical]);
+    return sorted;
+  }, [profiles, sort]);
 
   return (
     <main className="min-h-screen p-6 max-w-5xl mx-auto">
@@ -85,7 +132,7 @@ export default function ExplorePage() {
         <div>
           <h1 className="text-3xl font-bold">Explorar</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Sugestoes ranqueadas por afinidade. Algoritmo ML em W-R-3.
+            Sugestoes ranqueadas por afinidade real (discoverProfiles).
           </p>
         </div>
         <Link
@@ -104,7 +151,6 @@ export default function ExplorePage() {
           className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
         >
           <option value="affinity">Maior afinidade</option>
-          <option value="newest">Mais recentes</option>
           <option value="nearby">Mais proximos</option>
         </select>
         <select
@@ -122,60 +168,105 @@ export default function ExplorePage() {
         </select>
       </div>
 
-      {list.length === 0 ? (
+      {/* Loading */}
+      {state === "loading" && (
+        <div
+          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          role="status"
+          aria-live="polite"
+          aria-label="Carregando sugestoes"
+        >
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="h-52 rounded-2xl border border-border bg-muted/30 animate-pulse"
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Error */}
+      {state === "error" && (
+        <div
+          className="text-center py-12 border border-rose-800 rounded-2xl bg-rose-950/20"
+          role="alert"
+        >
+          <p className="font-medium text-rose-300">
+            Nao foi possivel carregar sugestoes
+          </p>
+          <p className="text-sm text-rose-400/80 mt-2">{errorMessage}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 text-sm rounded-lg border border-rose-700 hover:bg-rose-900/40"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {/* Empty */}
+      {state === "empty" && (
         <div className="text-center py-12 border border-border rounded-xl bg-muted/30">
           <p className="text-muted-foreground">
             Nenhuma sugestao com esses filtros agora.
           </p>
         </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {list.map((p) => (
-            <article
-              key={p.id}
-              className="border border-border rounded-2xl p-5 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-semibold">
-                    {p.name_PLACEHOLDER}, {p.age_PLACEHOLDER}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {p.city_PLACEHOLDER}
-                  </p>
-                </div>
-                <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-full font-semibold">
-                  {p.affinity_PLACEHOLDER}%
-                </span>
-              </div>
-              <ul className="text-xs text-muted-foreground space-y-1 mb-4">
-                {p.reasons_PLACEHOLDER.map((r) => (
-                  <li key={r}>· {r}</li>
-                ))}
-              </ul>
-              <div className="flex gap-2">
-                <Link
-                  href={`/chat/${p.id}`}
-                  className="flex-1 text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
-                >
-                  Conversar
-                </Link>
-                <Link
-                  href="/perfil"
-                  className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-accent"
-                >
-                  Perfil
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
       )}
 
-      <p className="text-xs text-muted-foreground text-center mt-6">
-        Ranqueamento atual: ordem fixa por compatibility_PLACEHOLDER. ML real em
-        W-R-3.
-      </p>
+      {/* Ready */}
+      {state === "ready" && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {list.map((p) => {
+            const affinity = Math.round((p.score ?? 0) * 100);
+            return (
+              <article
+                key={p.id}
+                className="border border-border rounded-2xl p-5 hover:shadow-lg transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-semibold">
+                      {p.displayName ?? "Perfil"}
+                      {p.age != null && `, ${p.age}`}
+                    </h3>
+                    {p.distance != null && (
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(p.distance)} km
+                      </p>
+                    )}
+                  </div>
+                  {affinity > 0 && (
+                    <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-full font-semibold">
+                      {affinity}%
+                    </span>
+                  )}
+                </div>
+                {p.matchedInterests.length > 0 ? (
+                  <ul className="text-xs text-muted-foreground space-y-1 mb-4">
+                    {p.matchedInterests.slice(0, 4).map((r) => (
+                      <li key={r}>· {r}</li>
+                    ))}
+                  </ul>
+                ) : p.bio ? (
+                  <p className="text-xs text-muted-foreground mb-4 line-clamp-3">
+                    {p.bio}
+                  </p>
+                ) : (
+                  <div className="mb-4" />
+                )}
+                <div className="flex gap-2">
+                  <Link
+                    href={`/perfil/${p.id}`}
+                    className="flex-1 text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                  >
+                    Ver perfil
+                  </Link>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </main>
   );
 }
