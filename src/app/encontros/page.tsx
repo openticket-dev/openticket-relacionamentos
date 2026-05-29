@@ -1,13 +1,16 @@
 /**
- * /encontros — Lista de encontros marcados/realizados com Sparkles Constellation 3D.
+ * /encontros — Encontros e eventos parceiros com Sparkles Constellation 3D.
  *
- * Cada encontro aparece como sparkle na constelacao 3D no topo (linha temporal
- * romantica). Lista abaixo mostra detalhes texto. Heart de relacionamentos
- * + constelacao = "voces estao construindo uma historia juntos".
+ * Cada evento aparece como sparkle na constelacao 3D no topo (linha temporal).
+ * Lista abaixo mostra detalhes texto. Heart de relacionamentos + constelacao
+ * = "voces estao construindo uma historia juntos".
  *
- * Wave: 3D-EXPANSION (J1D) · 62 -> 66
+ * WIRE_REAL: dados via GraphQL partnerEvents (gateway federado). O gateway NAO
+ * expoe `myEncontros`; `partnerEvents` e a query real de encontros/eventos
+ * parceiros (speed dating, retiros, jantares, workshops) do vertical B2B2C.
+ * Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
+ *
  * Stack: Next 16 App Router + R3F 9 (Tier 3).
- * Zero-mock: dados via fetch /api/graphql; sem fake data inventada.
  */
 
 "use client";
@@ -19,45 +22,53 @@ import {
   type EncontroPoint,
 } from "@/components/SparklesConstellation3D";
 
-const MY_ENCONTROS_QUERY = /* GraphQL */ `
-  query MyEncontros($limit: Int) {
-    myEncontros(limit: $limit) {
+// Contrato (introspection PartnerEvent): { id title kind description city state
+//   startsAt endsAt partnerName imageUrl externalUrl tags ... }
+const PARTNER_EVENTS_QUERY = /* GraphQL */ `
+  query PartnerEvents($input: PartnerEventsInput) {
+    partnerEvents(input: $input) {
       id
       title
-      scheduledAt
-      completedAt
-      status
-      energy
-      otherProfile {
-        id
-        displayName
-      }
+      kind
+      city
+      state
+      startsAt
+      endsAt
+      partnerName
+      externalUrl
     }
   }
 `;
 
-interface EncontroEntry {
+type PartnerEventKind =
+  | "SPEED_DATING"
+  | "RETREAT"
+  | "PARTY"
+  | "DINNER"
+  | "WORKSHOP"
+  | "OTHER";
+
+interface PartnerEvent {
   id: string;
   title: string;
-  scheduledAt: string;
-  completedAt: string | null;
-  status: "scheduled" | "completed" | "cancelled" | "pending";
-  energy: number | null;
-  otherProfile: {
-    id: string;
-    displayName: string;
-  };
+  kind: PartnerEventKind;
+  city: string | null;
+  state: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  partnerName: string | null;
+  externalUrl: string | null;
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
 
-async function fetchEncontros(limit: number): Promise<EncontroEntry[]> {
+async function fetchPartnerEvents(limit: number): Promise<PartnerEvent[]> {
   const res = await fetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      query: MY_ENCONTROS_QUERY,
-      variables: { limit },
+      query: PARTNER_EVENTS_QUERY,
+      variables: { input: { limit } },
     }),
     credentials: "include",
   });
@@ -65,14 +76,23 @@ async function fetchEncontros(limit: number): Promise<EncontroEntry[]> {
     throw new Error(`HTTP ${res.status}`);
   }
   const json = (await res.json()) as {
-    data?: { myEncontros: EncontroEntry[] | null };
+    data?: { partnerEvents: PartnerEvent[] | null };
     errors?: { message: string }[];
   };
   if (json.errors && json.errors.length > 0) {
     throw new Error(json.errors[0]?.message ?? "GraphQL error");
   }
-  return json.data?.myEncontros ?? [];
+  return json.data?.partnerEvents ?? [];
 }
+
+const KIND_LABEL: Record<PartnerEventKind, string> = {
+  SPEED_DATING: "Speed dating",
+  RETREAT: "Retiro",
+  PARTY: "Festa",
+  DINNER: "Jantar",
+  WORKSHOP: "Workshop",
+  OTHER: "Encontro",
+};
 
 function formatScheduled(iso: string): string {
   const d = new Date(iso);
@@ -87,7 +107,7 @@ function formatScheduled(iso: string): string {
 
 export default function EncontrosPage() {
   const [state, setState] = useState<LoadState>("loading");
-  const [encontros, setEncontros] = useState<EncontroEntry[]>([]);
+  const [events, setEvents] = useState<PartnerEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,14 +115,14 @@ export default function EncontrosPage() {
     async function load() {
       setState("loading");
       try {
-        const items = await fetchEncontros(50);
+        const items = await fetchPartnerEvents(50);
         if (cancelled) return;
         if (items.length === 0) {
-          setEncontros([]);
+          setEvents([]);
           setState("empty");
           return;
         }
-        setEncontros(items);
+        setEvents(items);
         setState("ready");
       } catch (err) {
         if (cancelled) return;
@@ -118,10 +138,10 @@ export default function EncontrosPage() {
     };
   }, []);
 
-  const constellationPoints: EncontroPoint[] = encontros.map((e) => ({
+  const constellationPoints: EncontroPoint[] = events.map((e) => ({
     id: e.id,
-    timestampMs: new Date(e.completedAt ?? e.scheduledAt).getTime(),
-    energy: e.energy ?? 0.7,
+    timestampMs: new Date(e.startsAt).getTime(),
+    energy: 0.7,
   }));
 
   return (
@@ -130,7 +150,7 @@ export default function EncontrosPage() {
         <header className="mb-6">
           <h1 className="text-3xl font-bold">Encontros</h1>
           <p className="text-sm text-zinc-400 mt-1">
-            Sua linha do tempo romantica em 3D. Cada estrela = um encontro.
+            Encontros e eventos parceiros em 3D. Cada estrela = um evento.
           </p>
         </header>
 
@@ -185,16 +205,16 @@ export default function EncontrosPage() {
                   energy: 0.5,
                 },
               ]}
-              ariaLabel="Constelacao vazia — primeiro encontro vai aparecer aqui"
+              ariaLabel="Constelacao vazia — proximos encontros vao aparecer aqui"
               className="h-64 w-full bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-zinc-950"
             />
             <div className="p-8 text-center">
               <p className="text-lg font-semibold mb-1">
-                Nenhum encontro ainda
+                Nenhum encontro disponivel ainda
               </p>
               <p className="text-sm text-zinc-400 mb-5">
-                Quando voce marcar ou completar encontros, eles vao aparecer
-                aqui como estrelas conectadas.
+                Quando parceiros publicarem encontros e eventos na sua regiao,
+                eles vao aparecer aqui como estrelas conectadas.
               </p>
               <Link
                 href="/matches"
@@ -212,13 +232,13 @@ export default function EncontrosPage() {
             <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-zinc-950">
               <SparklesConstellation3D
                 points={constellationPoints}
-                ariaLabel={`Constelacao 3D com ${encontros.length} encontros conectados`}
+                ariaLabel={`Constelacao 3D com ${events.length} encontros conectados`}
                 className="h-80 w-full bg-transparent border-0"
               />
             </div>
 
             <ul className="space-y-3" aria-label="Lista de encontros">
-              {encontros.map((e) => (
+              {events.map((e) => (
                 <li
                   key={e.id}
                   className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex items-center justify-between gap-4"
@@ -226,17 +246,25 @@ export default function EncontrosPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold truncate">{e.title}</p>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      Com{" "}
-                      <Link
-                        href={`/perfil/${e.otherProfile.id}`}
-                        className="text-fuchsia-300 hover:text-fuchsia-200"
-                      >
-                        {e.otherProfile.displayName}
-                      </Link>{" "}
-                      · {formatScheduled(e.scheduledAt)}
+                      {e.partnerName ? `${e.partnerName} · ` : ""}
+                      {[e.city, e.state].filter(Boolean).join("/")}
+                      {e.city || e.state ? " · " : ""}
+                      {formatScheduled(e.startsAt)}
                     </p>
                   </div>
-                  <StatusBadge status={e.status} />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <KindBadge kind={e.kind} />
+                    {e.externalUrl && (
+                      <a
+                        href={e.externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-fuchsia-300 hover:text-fuchsia-200 underline"
+                      >
+                        Detalhes
+                      </a>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -247,31 +275,20 @@ export default function EncontrosPage() {
   );
 }
 
-function StatusBadge({ status }: { status: EncontroEntry["status"] }) {
-  const cfg: Record<EncontroEntry["status"], { label: string; cls: string }> = {
-    scheduled: {
-      label: "Marcado",
-      cls: "bg-fuchsia-950 text-fuchsia-200 border-fuchsia-800",
-    },
-    completed: {
-      label: "Realizado",
-      cls: "bg-emerald-950 text-emerald-200 border-emerald-800",
-    },
-    cancelled: {
-      label: "Cancelado",
-      cls: "bg-zinc-800 text-zinc-400 border-zinc-700",
-    },
-    pending: {
-      label: "Pendente",
-      cls: "bg-amber-950 text-amber-200 border-amber-800",
-    },
+function KindBadge({ kind }: { kind: PartnerEventKind }) {
+  const cls: Record<PartnerEventKind, string> = {
+    SPEED_DATING: "bg-fuchsia-950 text-fuchsia-200 border-fuchsia-800",
+    RETREAT: "bg-emerald-950 text-emerald-200 border-emerald-800",
+    PARTY: "bg-purple-950 text-purple-200 border-purple-800",
+    DINNER: "bg-amber-950 text-amber-200 border-amber-800",
+    WORKSHOP: "bg-sky-950 text-sky-200 border-sky-800",
+    OTHER: "bg-zinc-800 text-zinc-300 border-zinc-700",
   };
-  const c = cfg[status];
   return (
     <span
-      className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${c.cls}`}
+      className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold border ${cls[kind] ?? cls.OTHER}`}
     >
-      {c.label}
+      {KIND_LABEL[kind] ?? "Encontro"}
     </span>
   );
 }

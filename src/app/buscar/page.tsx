@@ -1,61 +1,81 @@
 // Relacionamentos — Buscar (deck swipe Tinder-style)
 // Sprint M8-1: deck card-stack com keyboard navigation (left=pass, right=like, up=super)
-// Backend wiring: sprint W-R-2 (GraphQL matches(filter)) — placeholders explicitos enquanto isso.
+// WIRE_REAL: feed via GraphQL discoverProfiles(filters) no gateway federado.
+// Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
 
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SUBVERTICALS } from "@/lib/subverticals";
 
-type DeckProfile = {
-  id: string;
-  name_PLACEHOLDER: string;
-  age_PLACEHOLDER: number;
-  city_PLACEHOLDER: string;
-  bio_PLACEHOLDER: string;
-  vertical: string;
-  compatibility_PLACEHOLDER: number;
-  verified_PLACEHOLDER: boolean;
-};
+// Contrato do gateway (introspection DiscoveryFeedResultGql / DiscoveryProfile):
+//   discoverProfiles(filters: DiscoveryFiltersInput): DiscoveryFeedResultGql!
+//   DiscoveryProfile { id displayName avatar age distance bio interests score ... }
+const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
+  query DiscoverProfiles($filters: DiscoveryFiltersInput) {
+    discoverProfiles(filters: $filters) {
+      profiles {
+        id
+        displayName
+        avatar
+        age
+        distance
+        bio
+        interests
+        matchedInterests
+        score
+      }
+      nextCursor
+    }
+  }
+`;
 
-const PLACEHOLDER_DECK: DeckProfile[] = [
-  {
-    id: "ph-1",
-    name_PLACEHOLDER: "Perfil exemplo 1",
-    age_PLACEHOLDER: 28,
-    city_PLACEHOLDER: "Sao Paulo, SP",
-    bio_PLACEHOLDER:
-      "Bio exemplo — backend api-relacionamentos sera ligado em W-R-2.",
-    vertical: "dating",
-    compatibility_PLACEHOLDER: 87,
-    verified_PLACEHOLDER: true,
-  },
-  {
-    id: "ph-2",
-    name_PLACEHOLDER: "Perfil exemplo 2",
-    age_PLACEHOLDER: 32,
-    city_PLACEHOLDER: "Rio de Janeiro, RJ",
-    bio_PLACEHOLDER:
-      "Bio exemplo — feed real virá da query GraphQL matches(filter).",
-    vertical: "networking",
-    compatibility_PLACEHOLDER: 72,
-    verified_PLACEHOLDER: false,
-  },
-  {
-    id: "ph-3",
-    name_PLACEHOLDER: "Perfil exemplo 3",
-    age_PLACEHOLDER: 25,
-    city_PLACEHOLDER: "Curitiba, PR",
-    bio_PLACEHOLDER:
-      "Bio exemplo — algoritmo de matching em desenvolvimento (W-R-3).",
-    vertical: "fitness",
-    compatibility_PLACEHOLDER: 91,
-    verified_PLACEHOLDER: true,
-  },
-];
+interface DiscoveryProfile {
+  id: string;
+  displayName: string | null;
+  avatar: string | null;
+  age: number | null;
+  distance: number | null;
+  bio: string | null;
+  interests: string[];
+  matchedInterests: string[];
+  score: number;
+}
 
 type SwipeAction = "pass" | "like" | "super";
+type LoadState = "loading" | "ready" | "empty" | "error";
+
+async function fetchDiscovery(
+  subverticais: string[] | null,
+): Promise<DiscoveryProfile[]> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      query: DISCOVER_PROFILES_QUERY,
+      variables: {
+        filters: {
+          limit: 20,
+          cursor: 0,
+          ...(subverticais && subverticais.length > 0 ? { subverticais } : {}),
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    data?: { discoverProfiles: { profiles: DiscoveryProfile[] } | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  return json.data?.discoverProfiles?.profiles ?? [];
+}
 
 export default function BuscarPage() {
   const [activeVertical, setActiveVertical] = useState<string>("all");
@@ -65,23 +85,54 @@ export default function BuscarPage() {
   );
   const [dragX, setDragX] = useState(0);
 
-  const filtered = useMemo(
-    () =>
-      PLACEHOLDER_DECK.filter(
-        (m) => activeVertical === "all" || m.vertical === activeVertical,
-      ),
-    [activeVertical],
+  const [state, setState] = useState<LoadState>("loading");
+  const [deck, setDeck] = useState<DiscoveryProfile[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setState("loading");
+      setCursor(0);
+      setHistory([]);
+      try {
+        const subverticais = activeVertical === "all" ? null : [activeVertical];
+        const items = await fetchDiscovery(subverticais);
+        if (cancelled) return;
+        if (items.length === 0) {
+          setDeck([]);
+          setState("empty");
+          return;
+        }
+        setDeck(items);
+        setState("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const msg =
+          err instanceof Error ? err.message : "Falha ao carregar o feed";
+        setErrorMessage(msg);
+        setState("error");
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVertical]);
+
+  const current = deck[cursor];
+  const next = deck[cursor + 1];
+
+  const swipe = useCallback(
+    (action: SwipeAction) => {
+      const c = deck[cursor];
+      if (!c) return;
+      setHistory((h) => [...h, { id: c.id, action }]);
+      setCursor((idx) => idx + 1);
+      setDragX(0);
+    },
+    [deck, cursor],
   );
-
-  const current = filtered[cursor];
-  const next = filtered[cursor + 1];
-
-  const swipe = (action: SwipeAction) => {
-    if (!current) return;
-    setHistory((h) => [...h, { id: current.id, action }]);
-    setCursor((c) => c + 1);
-    setDragX(0);
-  };
 
   // Keyboard nav: ArrowLeft=pass, ArrowRight=like, ArrowUp=super
   useEffect(() => {
@@ -92,8 +143,7 @@ export default function BuscarPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current]);
+  }, [swipe]);
 
   return (
     <main className="min-h-screen p-6 max-w-3xl mx-auto">
@@ -101,7 +151,7 @@ export default function BuscarPage() {
         <div>
           <h1 className="text-3xl font-bold">Buscar conexoes</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Deck Tinder-style. Backend wireado em W-R-2 (GraphQL matches).
+            Deck Tinder-style. Feed real via discoverProfiles.
           </p>
         </div>
         <div className="flex gap-2 text-sm">
@@ -123,10 +173,7 @@ export default function BuscarPage() {
       {/* Filtros por vertical */}
       <div className="flex gap-2 overflow-x-auto pb-3 mb-6 border-b border-border">
         <button
-          onClick={() => {
-            setActiveVertical("all");
-            setCursor(0);
-          }}
+          onClick={() => setActiveVertical("all")}
           className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
             activeVertical === "all"
               ? "bg-fuchsia-600 text-white"
@@ -138,10 +185,7 @@ export default function BuscarPage() {
         {SUBVERTICALS.slice(0, 8).map((sv) => (
           <button
             key={sv.slug}
-            onClick={() => {
-              setActiveVertical(sv.slug);
-              setCursor(0);
-            }}
+            onClick={() => setActiveVertical(sv.slug)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
               activeVertical === sv.slug
                 ? "bg-fuchsia-600 text-white"
@@ -153,8 +197,49 @@ export default function BuscarPage() {
         ))}
       </div>
 
-      {/* Deck area */}
-      {!current ? (
+      {/* Loading */}
+      {state === "loading" && (
+        <div
+          className="h-[480px] rounded-2xl border border-border bg-muted/30 animate-pulse"
+          role="status"
+          aria-live="polite"
+          aria-label="Carregando perfis"
+        />
+      )}
+
+      {/* Error */}
+      {state === "error" && (
+        <div
+          className="text-center py-16 border border-rose-800 rounded-2xl bg-rose-950/20"
+          role="alert"
+        >
+          <p className="font-medium text-rose-300">
+            Nao foi possivel carregar o feed
+          </p>
+          <p className="text-sm text-rose-400/80 mt-2">{errorMessage}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 text-sm rounded-lg border border-rose-700 hover:bg-rose-900/40"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {/* Empty */}
+      {state === "empty" && (
+        <div className="text-center py-16 border border-border rounded-2xl bg-muted/30">
+          <p className="text-2xl mb-2">🎴</p>
+          <p className="font-medium">Nenhum perfil por aqui ainda</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Ajuste os filtros ou volte mais tarde — novos perfis aparecem aqui
+            conforme entram na sua regiao.
+          </p>
+        </div>
+      )}
+
+      {/* Ready — fim do deck */}
+      {state === "ready" && !current && (
         <div className="text-center py-16 border border-border rounded-2xl bg-muted/30">
           <p className="text-2xl mb-2">🎴</p>
           <p className="font-medium">Voce viu todos por aqui</p>
@@ -163,83 +248,84 @@ export default function BuscarPage() {
             ajuste filtros.
           </p>
           <button
-            onClick={() => {
-              setCursor(0);
-              setHistory([]);
-            }}
+            onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 text-sm rounded-lg border border-border hover:bg-accent"
           >
-            Recomecar
+            Recarregar feed
           </button>
         </div>
-      ) : (
-        <div className="relative h-[480px] mb-6">
-          {/* Card de baixo (proximo) */}
-          {next && (
+      )}
+
+      {/* Ready — deck ativo */}
+      {state === "ready" && current && (
+        <>
+          <div className="relative h-[480px] mb-6">
+            {/* Card de baixo (proximo) */}
+            {next && (
+              <article
+                aria-hidden
+                className="absolute inset-0 rounded-2xl border border-border bg-card shadow-md scale-95 opacity-60"
+              >
+                <CardContent profile={next} dragX={0} />
+              </article>
+            )}
+            {/* Card atual */}
             <article
-              aria-hidden
-              className="absolute inset-0 rounded-2xl border border-border bg-card shadow-md scale-95 opacity-60"
+              role="region"
+              aria-label={`Card de ${current.displayName ?? "perfil"}`}
+              onMouseDown={(e) => {
+                const startX = e.clientX;
+                const onMove = (ev: MouseEvent) =>
+                  setDragX(ev.clientX - startX);
+                const onUp = () => {
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                  if (dragX > 120) swipe("like");
+                  else if (dragX < -120) swipe("pass");
+                  else setDragX(0);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+              }}
+              className="absolute inset-0 rounded-2xl border border-border bg-card shadow-xl cursor-grab active:cursor-grabbing transition-transform"
+              style={{
+                transform: `translateX(${dragX}px) rotate(${dragX * 0.05}deg)`,
+              }}
             >
-              <CardContent profile={next} dragX={0} />
+              <CardContent profile={current} dragX={dragX} />
             </article>
-          )}
-          {/* Card atual */}
-          <article
-            role="region"
-            aria-label={`Card de ${current.name_PLACEHOLDER}`}
-            onMouseDown={(e) => {
-              const startX = e.clientX;
-              const onMove = (ev: MouseEvent) => setDragX(ev.clientX - startX);
-              const onUp = () => {
-                window.removeEventListener("mousemove", onMove);
-                window.removeEventListener("mouseup", onUp);
-                if (dragX > 120) swipe("like");
-                else if (dragX < -120) swipe("pass");
-                else setDragX(0);
-              };
-              window.addEventListener("mousemove", onMove);
-              window.addEventListener("mouseup", onUp);
-            }}
-            className="absolute inset-0 rounded-2xl border border-border bg-card shadow-xl cursor-grab active:cursor-grabbing transition-transform"
-            style={{
-              transform: `translateX(${dragX}px) rotate(${dragX * 0.05}deg)`,
-            }}
-          >
-            <CardContent profile={current} dragX={dragX} />
-          </article>
-        </div>
-      )}
+          </div>
 
-      {/* Acoes */}
-      {current && (
-        <div className="flex justify-center gap-4">
-          <button
-            onClick={() => swipe("pass")}
-            aria-label="Passar (seta esquerda)"
-            className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-rose-50 dark:hover:bg-rose-950 text-2xl"
-          >
-            ✕
-          </button>
-          <button
-            onClick={() => swipe("super")}
-            aria-label="Super-like (seta cima)"
-            className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-blue-50 dark:hover:bg-blue-950 text-2xl"
-          >
-            ★
-          </button>
-          <button
-            onClick={() => swipe("like")}
-            aria-label="Curtir (seta direita)"
-            className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-emerald-50 dark:hover:bg-emerald-950 text-2xl"
-          >
-            ♡
-          </button>
-        </div>
-      )}
+          {/* Acoes */}
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={() => swipe("pass")}
+              aria-label="Passar (seta esquerda)"
+              className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-rose-50 dark:hover:bg-rose-950 text-2xl"
+            >
+              ✕
+            </button>
+            <button
+              onClick={() => swipe("super")}
+              aria-label="Super-like (seta cima)"
+              className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-blue-50 dark:hover:bg-blue-950 text-2xl"
+            >
+              ★
+            </button>
+            <button
+              onClick={() => swipe("like")}
+              aria-label="Curtir (seta direita)"
+              className="w-14 h-14 rounded-full bg-white dark:bg-zinc-900 border border-border shadow hover:bg-emerald-50 dark:hover:bg-emerald-950 text-2xl"
+            >
+              ♡
+            </button>
+          </div>
 
-      <p className="text-center text-xs text-muted-foreground mt-4">
-        Atalhos: ← passar · ↑ super · → curtir
-      </p>
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Atalhos: ← passar · ↑ super · → curtir
+          </p>
+        </>
+      )}
     </main>
   );
 }
@@ -248,38 +334,66 @@ function CardContent({
   profile,
   dragX,
 }: {
-  profile: DeckProfile;
+  profile: DiscoveryProfile;
   dragX: number;
 }) {
+  const compatibility = Math.round((profile.score ?? 0) * 100);
   return (
     <div className="relative h-full p-6 flex flex-col">
-      <div className="flex-1 rounded-xl bg-gradient-to-br from-fuchsia-200 via-rose-200 to-amber-200 dark:from-fuchsia-900/40 dark:via-rose-900/40 dark:to-amber-900/40 mb-4 flex items-center justify-center">
-        <span className="text-6xl opacity-30">👤</span>
+      <div className="flex-1 rounded-xl bg-gradient-to-br from-fuchsia-200 via-rose-200 to-amber-200 dark:from-fuchsia-900/40 dark:via-rose-900/40 dark:to-amber-900/40 mb-4 flex items-center justify-center overflow-hidden">
+        {profile.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatar}
+            alt={profile.displayName ?? "Perfil"}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="text-6xl opacity-30">👤</span>
+        )}
       </div>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">
-            {profile.name_PLACEHOLDER}, {profile.age_PLACEHOLDER}
-            {profile.verified_PLACEHOLDER && (
-              <span
-                className="ml-2 inline-block text-blue-600"
-                title="Perfil verificado (Datavalid)"
-              >
-                ✓
-              </span>
-            )}
+            {profile.displayName ?? "Perfil"}
+            {profile.age != null && `, ${profile.age}`}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {profile.city_PLACEHOLDER}
-          </p>
+          {profile.distance != null && (
+            <p className="text-sm text-muted-foreground">
+              {Math.round(profile.distance)} km
+            </p>
+          )}
         </div>
-        <span className="shrink-0 text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300 px-2 py-1 rounded-full">
-          {profile.compatibility_PLACEHOLDER}% match
-        </span>
+        {compatibility > 0 && (
+          <span className="shrink-0 text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300 px-2 py-1 rounded-full">
+            {compatibility}% match
+          </span>
+        )}
       </div>
-      <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-        {profile.bio_PLACEHOLDER}
-      </p>
+      {profile.bio && (
+        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+          {profile.bio}
+        </p>
+      )}
+      {profile.interests.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {profile.interests.slice(0, 6).map((tag) => {
+            const matched = profile.matchedInterests.includes(tag);
+            return (
+              <span
+                key={tag}
+                className={`text-[11px] px-2 py-0.5 rounded-full ${
+                  matched
+                    ? "bg-fuchsia-600/20 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-500/40"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {tag}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {/* Overlays drag */}
       {dragX > 40 && (
         <div className="absolute top-8 left-8 px-3 py-1 border-2 border-emerald-500 text-emerald-500 text-xl font-bold rounded rotate-[-12deg]">

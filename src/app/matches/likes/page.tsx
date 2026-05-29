@@ -1,71 +1,124 @@
-// Relacionamentos — Quem curtiu voce (premium gate)
-// Sprint M8-1: lista de likes recebidos. Free user ve blur+count, premium ve cards.
-// Backend: W-R-2 wira query GraphQL receivedLikes + auth.subscription tier check.
+// Relacionamentos — Quem demonstrou interesse no seu perfil (premium gate)
+// WIRE_REAL: lista via GraphQL myProfileViewers (quem viu seu perfil) — o sinal
+// de interesse real disponivel no gateway. Free user ve blur+count, premium ve cards.
+// Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
+//
+// NOTA de contrato: o gateway nao expoe `receivedLikes` (so `myLikes`, que sao
+// os likes que VOCE enviou, sem displayName/avatar). `myProfileViewers` e a
+// unica query com dado enriquecido (displayName + avatar + viewedAt) sobre quem
+// se interessou pelo seu perfil — e o que alimenta esta tela.
 
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-type LikeProfile = {
+// Contrato (introspection): myProfileViewers(input: MyProfileViewersInput): [ProfileViewer!]!
+//   ProfileViewer { id viewerId displayName avatar viewedAt source }
+const MY_PROFILE_VIEWERS_QUERY = /* GraphQL */ `
+  query MyProfileViewers($input: MyProfileViewersInput) {
+    myProfileViewers(input: $input) {
+      id
+      viewerId
+      displayName
+      avatar
+      viewedAt
+      source
+    }
+  }
+`;
+
+interface ProfileViewer {
   id: string;
-  name_PLACEHOLDER: string;
-  age_PLACEHOLDER: number;
-  city_PLACEHOLDER: string;
-  likedAt_PLACEHOLDER: string;
-};
+  viewerId: string;
+  displayName: string | null;
+  avatar: string | null;
+  viewedAt: string;
+  source: string | null;
+}
 
-const PLACEHOLDER_LIKES: LikeProfile[] = [
-  {
-    id: "lk-1",
-    name_PLACEHOLDER: "Curtiu voce 1",
-    age_PLACEHOLDER: 26,
-    city_PLACEHOLDER: "Sao Paulo, SP",
-    likedAt_PLACEHOLDER: "ha 1h",
-  },
-  {
-    id: "lk-2",
-    name_PLACEHOLDER: "Curtiu voce 2",
-    age_PLACEHOLDER: 31,
-    city_PLACEHOLDER: "Rio, RJ",
-    likedAt_PLACEHOLDER: "ha 4h",
-  },
-  {
-    id: "lk-3",
-    name_PLACEHOLDER: "Curtiu voce 3",
-    age_PLACEHOLDER: 24,
-    city_PLACEHOLDER: "Florianopolis, SC",
-    likedAt_PLACEHOLDER: "ontem",
-  },
-  {
-    id: "lk-4",
-    name_PLACEHOLDER: "Curtiu voce 4",
-    age_PLACEHOLDER: 29,
-    city_PLACEHOLDER: "Curitiba, PR",
-    likedAt_PLACEHOLDER: "ha 2d",
-  },
-  {
-    id: "lk-5",
-    name_PLACEHOLDER: "Curtiu voce 5",
-    age_PLACEHOLDER: 33,
-    city_PLACEHOLDER: "Salvador, BA",
-    likedAt_PLACEHOLDER: "semana passada",
-  },
-];
+type LoadState = "loading" | "ready" | "empty" | "error";
+
+async function fetchViewers(limit: number): Promise<ProfileViewer[]> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      query: MY_PROFILE_VIEWERS_QUERY,
+      variables: { input: { limit } },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    data?: { myProfileViewers: ProfileViewer[] | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  return json.data?.myProfileViewers ?? [];
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function LikesPage() {
-  // PLACEHOLDER: detectar tier real via auth/subscription em W-R-2 + W-R-7
-  // Por enquanto, permite toggle local pra preview
+  // Tier real (subscription) liga em W-R-7. Toggle local apenas demonstra o gate
+  // visual — o DADO listado abaixo e sempre real (myProfileViewers).
   const [isPremium, setIsPremium] = useState(false);
+
+  const [state, setState] = useState<LoadState>("loading");
+  const [viewers, setViewers] = useState<ProfileViewer[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setState("loading");
+      try {
+        const items = await fetchViewers(50);
+        if (cancelled) return;
+        if (items.length === 0) {
+          setViewers([]);
+          setState("empty");
+          return;
+        }
+        setViewers(items);
+        setState("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const msg =
+          err instanceof Error ? err.message : "Falha ao carregar a lista";
+        setErrorMessage(msg);
+        setState("error");
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <main className="min-h-screen p-6 max-w-3xl mx-auto">
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Quem curtiu voce</h1>
+          <h1 className="text-3xl font-bold">Quem viu seu perfil</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {PLACEHOLDER_LIKES.length} pessoas curtiram seu perfil. Premium
-            destrava a lista completa.
+            {state === "ready"
+              ? `${viewers.length} pessoas visualizaram seu perfil. Premium destrava a lista completa.`
+              : "Quem demonstrou interesse no seu perfil. Premium destrava a lista completa."}
           </p>
         </div>
         <Link
@@ -76,10 +129,10 @@ export default function LikesPage() {
         </Link>
       </header>
 
-      {/* Preview toggle (debug — remover quando auth real conectar) */}
+      {/* Preview toggle do gate premium — tier real liga em W-R-7 (subscription) */}
       <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300">
-        <strong>Preview:</strong> tier checking sera ligado em W-R-7 (Stripe
-        subscription). Toggle abaixo simula state.{" "}
+        <strong>Preview:</strong> a checagem de tier liga em W-R-7 (subscription).
+        Toggle abaixo simula o estado — a lista carregada e sempre real.{" "}
         <button
           onClick={() => setIsPremium((v) => !v)}
           className="ml-2 underline font-medium"
@@ -88,63 +141,121 @@ export default function LikesPage() {
         </button>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {PLACEHOLDER_LIKES.map((l) => (
-          <article
-            key={l.id}
-            className="border border-border rounded-2xl p-5 relative overflow-hidden"
-          >
-            {!isPremium && (
-              <div
-                aria-hidden
-                className="absolute inset-0 backdrop-blur-md bg-background/30 z-10 flex items-center justify-center"
-              >
-                <span className="text-3xl opacity-60">🔒</span>
-              </div>
-            )}
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h3 className="font-semibold">
-                  {isPremium
-                    ? `${l.name_PLACEHOLDER}, ${l.age_PLACEHOLDER}`
-                    : "Perfil oculto"}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  {isPremium ? l.city_PLACEHOLDER : "—"}
-                </p>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {l.likedAt_PLACEHOLDER}
-              </span>
-            </div>
-            <div className="h-32 rounded-xl bg-gradient-to-br from-fuchsia-200 via-rose-200 to-amber-200 dark:from-fuchsia-900/40 dark:via-rose-900/40 dark:to-amber-900/40 mb-3 flex items-center justify-center">
-              <span className="text-4xl opacity-30">👤</span>
-            </div>
-            {isPremium ? (
-              <div className="flex gap-2">
-                <Link
-                  href={`/chat/${l.id}`}
-                  className="flex-1 text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
-                >
-                  Curtir de volta
-                </Link>
-              </div>
-            ) : (
-              <Link
-                href="/perfil"
-                className="block text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
-              >
-                Upgrade para ver
-              </Link>
-            )}
-          </article>
-        ))}
-      </div>
+      {/* Loading */}
+      {state === "loading" && (
+        <div
+          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          role="status"
+          aria-live="polite"
+          aria-label="Carregando lista"
+        >
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-56 rounded-2xl border border-border bg-muted/30 animate-pulse"
+            />
+          ))}
+        </div>
+      )}
 
-      {!isPremium && (
+      {/* Error */}
+      {state === "error" && (
+        <div
+          className="text-center py-12 border border-rose-800 rounded-2xl bg-rose-950/20"
+          role="alert"
+        >
+          <p className="font-medium text-rose-300">
+            Nao foi possivel carregar a lista
+          </p>
+          <p className="text-sm text-rose-400/80 mt-2">{errorMessage}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 text-sm rounded-lg border border-rose-700 hover:bg-rose-900/40"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {/* Empty */}
+      {state === "empty" && (
+        <div className="text-center py-12 border border-border rounded-xl bg-muted/30">
+          <p className="text-3xl mb-2">👀</p>
+          <p className="font-medium">Ninguem viu seu perfil ainda</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Complete seu perfil e comece a curtir — as visualizacoes aparecem
+            aqui.
+          </p>
+        </div>
+      )}
+
+      {/* Ready */}
+      {state === "ready" && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {viewers.map((v) => (
+            <article
+              key={v.id}
+              className="border border-border rounded-2xl p-5 relative overflow-hidden"
+            >
+              {!isPremium && (
+                <div
+                  aria-hidden
+                  className="absolute inset-0 backdrop-blur-md bg-background/30 z-10 flex items-center justify-center"
+                >
+                  <span className="text-3xl opacity-60">🔒</span>
+                </div>
+              )}
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="font-semibold">
+                    {isPremium
+                      ? (v.displayName ?? "Perfil")
+                      : "Perfil oculto"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {isPremium && v.source ? v.source : "—"}
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {formatWhen(v.viewedAt)}
+                </span>
+              </div>
+              <div className="h-32 rounded-xl bg-gradient-to-br from-fuchsia-200 via-rose-200 to-amber-200 dark:from-fuchsia-900/40 dark:via-rose-900/40 dark:to-amber-900/40 mb-3 flex items-center justify-center overflow-hidden">
+                {isPremium && v.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={v.avatar}
+                    alt={v.displayName ?? "Perfil"}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-4xl opacity-30">👤</span>
+                )}
+              </div>
+              {isPremium ? (
+                <Link
+                  href={`/perfil/${v.viewerId}`}
+                  className="block text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                >
+                  Ver perfil
+                </Link>
+              ) : (
+                <Link
+                  href="/premium"
+                  className="block text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                >
+                  Upgrade para ver
+                </Link>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+
+      {state === "ready" && !isPremium && (
         <div className="mt-8 text-center p-6 rounded-2xl border border-border bg-gradient-to-br from-fuchsia-50 to-rose-50 dark:from-fuchsia-950/30 dark:to-rose-950/30">
           <p className="text-2xl mb-2">⭐</p>
-          <h2 className="font-semibold text-lg">Veja quem te curtiu</h2>
+          <h2 className="font-semibold text-lg">Veja quem se interessou</h2>
           <p className="text-sm text-muted-foreground mt-1 mb-3">
             Premium libera a lista completa, super-likes ilimitados e perfil
             destacado.
