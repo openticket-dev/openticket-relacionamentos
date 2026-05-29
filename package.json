@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@apollo/client": "^4.1.6",
+    "@openticket-dev/ui": "file:vendor/openticket-dev-ui-0.6.0.tgz",
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
     "graphql": "^16.13.0",
