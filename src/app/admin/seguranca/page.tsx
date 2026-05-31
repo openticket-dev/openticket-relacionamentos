@@ -1,40 +1,123 @@
-// Relacionamentos — Admin Security Dashboard (REFINADO Sprint M8-2)
-// Overview hub: KPIs + links pra denuncias / banidos / auditoria.
-// W-R-6 ligara queries reais via Apollo. Honest empty when no data.
-// RBAC role: trust_safety.
+// Relacionamentos — Admin Security Dashboard
+// W4-REDO: WIRE_REAL — KPIs e acoes recentes via GraphQL platformReports +
+// platformBans + panicMetrics + panicAuditLog (PlatformModerationResolver,
+// SUPER_ADMIN). Zero-mock: numeros e log vem do gateway; sem KPI hardcoded.
+// RBAC role: SUPER_ADMIN (gateway), trust_safety (intencao de produto).
 
 "use client";
 
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
-type ModerationKPIs = {
-  openReports: number;
-  reportsToday: number;
-  bannedUsers: number;
-  avgResolutionMinutes: number;
-};
+interface PanicMetrics {
+  totalAlerts: number;
+  respondedWithinSla: number;
+  slaCompliancePct: number;
+  avgResponseSeconds: number;
+}
 
-type RecentAction = {
+interface PanicAuditEntry {
   id: string;
-  actor: string;
   action: string;
-  target: string;
-  ts: number;
-};
+  actor: string;
+  panicId: string | null;
+  profileId: string | null;
+  createdAt: string;
+}
 
-// SEED zero — dados reais via queryModerationOverview() em W-R-6.
-const KPIS: ModerationKPIs = {
-  openReports: 0,
-  reportsToday: 0,
-  bannedUsers: 0,
-  avgResolutionMinutes: 0,
-};
+interface OverviewData {
+  reportsTotal: number;
+  bansTotal: number;
+  metrics: PanicMetrics | null;
+  recent: PanicAuditEntry[];
+}
 
-const RECENT_ACTIONS: RecentAction[] = [];
+type LoadState = "loading" | "ready" | "error";
+
+const OVERVIEW_QUERY = /* GraphQL */ `
+  query SecurityOverview {
+    platformReports(input: { limit: 1, offset: 0 }) {
+      total
+    }
+    platformBans(input: { activeOnly: true, limit: 1, offset: 0 }) {
+      total
+    }
+    panicMetrics {
+      totalAlerts
+      respondedWithinSla
+      slaCompliancePct
+      avgResponseSeconds
+    }
+    panicAuditLog(input: { limit: 10, offset: 0 }) {
+      items {
+        id
+        action
+        actor
+        panicId
+        profileId
+        createdAt
+      }
+    }
+  }
+`;
+
+async function gql<T>(query: string): Promise<T> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    data?: T;
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  if (!json.data) throw new Error("No data returned");
+  return json.data;
+}
 
 export default function SegurancaOverviewPage() {
+  const [data, setData] = useState<OverviewData | null>(null);
+  const [state, setState] = useState<LoadState>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setState("loading");
+    try {
+      const res = await gql<{
+        platformReports: { total: number };
+        platformBans: { total: number };
+        panicMetrics: PanicMetrics | null;
+        panicAuditLog: { items: PanicAuditEntry[] };
+      }>(OVERVIEW_QUERY);
+      setData({
+        reportsTotal: res.platformReports?.total ?? 0,
+        bansTotal: res.platformBans?.total ?? 0,
+        metrics: res.panicMetrics ?? null,
+        recent: res.panicAuditLog?.items ?? [],
+      });
+      setState("ready");
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Falha ao carregar overview",
+      );
+      setState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const kpi = (value: number | string) =>
+    state === "loading" ? "…" : value;
+
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">
       <header className="mb-8">
@@ -58,33 +141,57 @@ export default function SegurancaOverviewPage() {
         </div>
       </header>
 
+      {state === "error" && (
+        <div
+          className="mb-8 text-center py-8 border border-rose-800 rounded-xl bg-rose-950/20"
+          role="alert"
+        >
+          <p className="font-medium text-rose-300">
+            Nao foi possivel carregar os indicadores
+          </p>
+          <p className="text-sm text-rose-400/80 mt-2">{errorMessage}</p>
+          <button
+            onClick={() => load()}
+            className="mt-4 px-4 py-2 text-sm rounded-lg border border-rose-700 hover:bg-rose-900/40"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="p-4 rounded-lg border border-border bg-card">
           <p className="text-xs text-muted-foreground uppercase tracking-wider">
-            Denuncias abertas
-          </p>
-          <p className="text-3xl font-bold mt-1">{KPIS.openReports}</p>
-        </div>
-        <div className="p-4 rounded-lg border border-border bg-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">
-            Hoje
-          </p>
-          <p className="text-3xl font-bold mt-1">{KPIS.reportsToday}</p>
-        </div>
-        <div className="p-4 rounded-lg border border-border bg-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">
-            Banidos
-          </p>
-          <p className="text-3xl font-bold mt-1">{KPIS.bannedUsers}</p>
-        </div>
-        <div className="p-4 rounded-lg border border-border bg-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">
-            Resolucao media
+            Denuncias
           </p>
           <p className="text-3xl font-bold mt-1">
-            {KPIS.avgResolutionMinutes > 0
-              ? `${KPIS.avgResolutionMinutes}m`
-              : "—"}
+            {kpi(data?.reportsTotal ?? 0)}
+          </p>
+        </div>
+        <div className="p-4 rounded-lg border border-border bg-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Banidos ativos
+          </p>
+          <p className="text-3xl font-bold mt-1">{kpi(data?.bansTotal ?? 0)}</p>
+        </div>
+        <div className="p-4 rounded-lg border border-border bg-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Alertas panico
+          </p>
+          <p className="text-3xl font-bold mt-1">
+            {kpi(data?.metrics?.totalAlerts ?? 0)}
+          </p>
+        </div>
+        <div className="p-4 rounded-lg border border-border bg-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            SLA panico
+          </p>
+          <p className="text-3xl font-bold mt-1">
+            {state === "loading"
+              ? "…"
+              : data?.metrics
+                ? `${data.metrics.slaCompliancePct.toFixed(0)}%`
+                : "—"}
           </p>
         </div>
       </section>
@@ -132,7 +239,15 @@ export default function SegurancaOverviewPage() {
 
       <section>
         <h2 className="font-semibold mb-3">Acoes recentes</h2>
-        {RECENT_ACTIONS.length === 0 ? (
+        {state === "loading" ? (
+          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+            {[1, 2, 3].map((i) => (
+              <li key={i} className="p-4">
+                <div className="h-4 w-2/3 rounded bg-muted/40 animate-pulse" />
+              </li>
+            ))}
+          </ul>
+        ) : !data || data.recent.length === 0 ? (
           <div className="p-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">
               Nenhuma acao de moderacao registrada ainda.
@@ -144,13 +259,20 @@ export default function SegurancaOverviewPage() {
           </div>
         ) : (
           <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-            {RECENT_ACTIONS.map((a) => (
+            {data.recent.map((a) => (
               <li key={a.id} className="p-4 text-sm">
-                <span className="font-medium">{a.actor}</span>{" "}
-                <span className="text-muted-foreground">{a.action}</span>{" "}
-                <span className="font-medium">{a.target}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {a.actor.slice(0, 8)}
+                </span>{" "}
+                <span className="font-medium">{a.action}</span>
+                {a.profileId && (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {" "}
+                    → {a.profileId.slice(0, 8)}
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground ml-2">
-                  {new Date(a.ts).toLocaleString("pt-BR")}
+                  {new Date(a.createdAt).toLocaleString("pt-BR")}
                 </span>
               </li>
             ))}
