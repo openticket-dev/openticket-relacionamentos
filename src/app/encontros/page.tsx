@@ -145,11 +145,11 @@ export default function EncontrosPage() {
   }));
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-white">
+    <main className="min-h-screen bg-gradient-to-br from-[#07060d] via-[#13101f] to-[#07060d] text-white">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         <header className="mb-6">
           <h1 className="text-3xl font-bold">Encontros</h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-[#9a93b5] mt-1">
             Encontros e eventos parceiros em 3D. Cada estrela = um evento.
           </p>
         </header>
@@ -157,16 +157,16 @@ export default function EncontrosPage() {
         {/* Loading */}
         {state === "loading" && (
           <div
-            className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8"
+            className="rounded-2xl border border-[#2a2342] bg-[#13101f]/50 p-8"
             role="status"
             aria-live="polite"
           >
-            <div className="h-80 w-full rounded-xl bg-zinc-800/30 animate-pulse mb-4" />
+            <div className="h-80 w-full rounded-xl bg-[#2a2342]/30 animate-pulse mb-4" />
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="h-16 rounded-lg bg-zinc-800/30 animate-pulse"
+                  className="h-16 rounded-lg bg-[#2a2342]/30 animate-pulse"
                 />
               ))}
             </div>
@@ -195,7 +195,7 @@ export default function EncontrosPage() {
 
         {/* Empty */}
         {state === "empty" && (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
+          <div className="rounded-2xl border border-[#2a2342] bg-[#13101f]/50 overflow-hidden">
             {/* Constelacao vazia gera 1 sparkle de boas-vindas */}
             <SparklesConstellation3D
               points={[
@@ -206,13 +206,13 @@ export default function EncontrosPage() {
                 },
               ]}
               ariaLabel="Constelacao vazia — proximos encontros vao aparecer aqui"
-              className="h-64 w-full bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-zinc-950"
+              className="h-64 w-full bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-[#07060d]"
             />
             <div className="p-8 text-center">
               <p className="text-lg font-semibold mb-1">
                 Nenhum encontro disponivel ainda
               </p>
-              <p className="text-sm text-zinc-400 mb-5">
+              <p className="text-sm text-[#9a93b5] mb-5">
                 Quando parceiros publicarem encontros e eventos na sua regiao,
                 eles vao aparecer aqui como estrelas conectadas.
               </p>
@@ -229,7 +229,7 @@ export default function EncontrosPage() {
         {/* Ready */}
         {state === "ready" && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-zinc-950">
+            <div className="rounded-2xl border border-[#2a2342] overflow-hidden bg-gradient-to-br from-fuchsia-950/30 via-purple-950/20 to-[#07060d]">
               <SparklesConstellation3D
                 points={constellationPoints}
                 ariaLabel={`Constelacao 3D com ${events.length} encontros conectados`}
@@ -241,11 +241,11 @@ export default function EncontrosPage() {
               {events.map((e) => (
                 <li
                   key={e.id}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex items-center justify-between gap-4"
+                  className="rounded-xl border border-[#2a2342] bg-[#13101f]/40 p-4 flex items-center justify-between gap-4"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold truncate">{e.title}</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className="text-xs text-[#9a93b5] mt-0.5">
                       {e.partnerName ? `${e.partnerName} · ` : ""}
                       {[e.city, e.state].filter(Boolean).join("/")}
                       {e.city || e.state ? " · " : ""}
@@ -282,7 +282,7 @@ function KindBadge({ kind }: { kind: PartnerEventKind }) {
     PARTY: "bg-purple-950 text-purple-200 border-purple-800",
     DINNER: "bg-amber-950 text-amber-200 border-amber-800",
     WORKSHOP: "bg-sky-950 text-sky-200 border-sky-800",
-    OTHER: "bg-zinc-800 text-zinc-300 border-zinc-700",
+    OTHER: "bg-[#2a2342] text-[#9a93b5] border-[#2a2342]",
   };
   return (
     <span

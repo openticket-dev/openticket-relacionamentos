@@ -88,7 +88,7 @@ export default function DnaResultadoPage() {
     return (
       <main className="min-h-screen px-6 py-12">
         <div className="max-w-2xl mx-auto">
-          <p className="text-zinc-400" aria-live="polite">
+          <p className="text-[#9a93b5]" aria-live="polite">
             Calculando seu DNA...
           </p>
         </div>
@@ -132,7 +132,7 @@ export default function DnaResultadoPage() {
       <div className="max-w-2xl mx-auto space-y-8">
         <header className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Seu DNA</h1>
-          <p className="text-zinc-400">
+          <p className="text-[#9a93b5]">
             Os 5 traços que vão pesar nos seus matches.
           </p>
         </header>
@@ -157,14 +157,14 @@ export default function DnaResultadoPage() {
                   aria-valuemax={100}
                   aria-valuenow={pct}
                   aria-label={`${DNA_DIMENSION_LABELS[d]}: ${pct}%`}
-                  className="h-3 rounded-full bg-zinc-800 overflow-hidden"
+                  className="h-3 rounded-full bg-[#2a2342] overflow-hidden"
                 >
                   <div
                     className="h-full bg-gradient-to-r from-fuchsia-600 to-purple-500"
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-[#9a93b5]">
                   {DIMENSION_DESCRIPTIONS[d]}
                 </p>
               </li>
@@ -175,7 +175,7 @@ export default function DnaResultadoPage() {
         <div className="flex gap-3 pt-4">
           <Link
             href="/onboarding/dna"
-            className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="px-5 py-3 rounded-lg border border-[#2a2342] text-[#ece9f5] hover:bg-[#13101f] transition-colors"
           >
             Refazer
           </Link>

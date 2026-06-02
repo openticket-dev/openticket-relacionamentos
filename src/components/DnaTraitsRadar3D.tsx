@@ -102,7 +102,7 @@ export function DnaTraitsRadar3D({
 }) {
   return (
     <div
-      className="h-64 w-full rounded-lg bg-zinc-950/40 border border-zinc-800"
+      className="h-64 w-full rounded-lg bg-[#07060d]/40 border border-[#2a2342]"
       role="img"
       aria-label={`Visualizacao 3D dos seus 5 tracos: ${DIMENSIONS.map(
         (d) =>

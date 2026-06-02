@@ -172,7 +172,7 @@ export default function DnaOnboardingPage() {
           <div className="flex gap-3 pt-2">
             <Link
               href="/landing"
-              className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors"
+              className="px-5 py-3 rounded-lg border border-[#2a2342] text-[#ece9f5] hover:bg-[#13101f] transition-colors"
             >
               Agora não
             </Link>
@@ -196,7 +196,7 @@ export default function DnaOnboardingPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Progress */}
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-zinc-400">
+          <div className="flex justify-between text-xs text-[#9a93b5]">
             <span>
               Tela {page + 1} de {TOTAL_PAGES}
             </span>
@@ -208,7 +208,7 @@ export default function DnaOnboardingPage() {
             aria-valuemax={100}
             aria-valuenow={overallProgress}
             aria-label="Progresso do questionário"
-            className="h-2 rounded-full bg-zinc-800 overflow-hidden"
+            className="h-2 rounded-full bg-[#2a2342] overflow-hidden"
           >
             <div
               className="h-full bg-fuchsia-500 transition-all"
@@ -247,7 +247,7 @@ export default function DnaOnboardingPage() {
                           className={`flex flex-col items-center gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
                             selected
                               ? "border-fuchsia-500 bg-fuchsia-950/40"
-                              : "border-zinc-700 hover:border-zinc-500"
+                              : "border-[#2a2342] hover:border-[#6f6790]"
                           }`}
                         >
                           <input
@@ -265,7 +265,7 @@ export default function DnaOnboardingPage() {
                             aria-label={opt.label}
                           />
                           <span className="text-xl font-bold">{opt.value}</span>
-                          <span className="text-[10px] text-center text-zinc-400 leading-tight">
+                          <span className="text-[10px] text-center text-[#9a93b5] leading-tight">
                             {opt.label}
                           </span>
                         </label>
@@ -297,7 +297,7 @@ export default function DnaOnboardingPage() {
               else setPage(page - 1);
             }}
             disabled={submitting}
-            className="px-5 py-3 rounded-lg border border-zinc-700 text-zinc-200 hover:bg-zinc-900 transition-colors disabled:opacity-40"
+            className="px-5 py-3 rounded-lg border border-[#2a2342] text-[#ece9f5] hover:bg-[#13101f] transition-colors disabled:opacity-40"
             aria-label="Voltar"
           >
             Voltar

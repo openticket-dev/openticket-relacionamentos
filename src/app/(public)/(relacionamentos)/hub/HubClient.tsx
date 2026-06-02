@@ -28,7 +28,7 @@ function HeartIcon({ className }: { className?: string }) {
 
 export default function HubClient() {
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-[#0a0508] text-white">
+    <main className="relative min-h-screen w-full overflow-hidden bg-[#07060d] text-white">
       {/* WebGPU Tier 3 / Tier 2 fallback love sphere scene */}
       <W3DRelacionamentosScene tier="auto" className="absolute inset-0" />
 
@@ -37,14 +37,14 @@ export default function HubClient() {
         <div className="max-w-3xl">
           <div
             className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-4 py-1.5 text-xs uppercase tracking-widest backdrop-blur-md"
-            style={{ color: "#fbb6ce" }}
+            style={{ color: "#f0abfc" }}
           >
             <HeartIcon className="h-3.5 w-3.5" />
             OpenTicket · Relacionamentos
           </div>
           <h1 className="mb-6 text-5xl font-bold leading-[1.05] md:text-7xl">
             Conexão,{" "}
-            <span style={{ color: "#fbb6ce" }}>match</span>, amor.
+            <span style={{ color: "#f0abfc" }}>match</span>, amor.
           </h1>
           <p className="mb-10 text-lg text-white/70 md:text-xl">
             18 subverticais — do amor ao co-founder, do mentor ao parceiro de
@@ -54,7 +54,7 @@ export default function HubClient() {
           <div className="flex flex-wrap justify-center gap-3">
             <Link
               href="/buscar"
-              className="inline-block rounded-lg border border-white/20 bg-[#fbb6ce]/25 px-6 py-3 text-white backdrop-blur-md transition-colors hover:border-white/40 hover:bg-[#fbb6ce]/40"
+              className="inline-block rounded-lg border border-white/20 bg-[#f0abfc]/25 px-6 py-3 text-white backdrop-blur-md transition-colors hover:border-white/40 hover:bg-[#f0abfc]/40"
             >
               Comecar a conectar
             </Link>
@@ -74,7 +74,7 @@ export default function HubClient() {
         </div>
 
         {/* Subtle vignette bottom — keeps heart visible above CTA */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0508] to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#07060d] to-transparent" />
       </div>
     </main>
   );

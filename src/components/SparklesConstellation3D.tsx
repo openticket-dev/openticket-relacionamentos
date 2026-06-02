@@ -157,7 +157,7 @@ export function SparklesConstellation3D({
   points,
   accent = "#f0abfc",
   ariaLabel,
-  className = "h-80 w-full rounded-2xl bg-zinc-950/40 border border-zinc-800",
+  className = "h-80 w-full rounded-2xl bg-[#07060d]/40 border border-[#2a2342]",
 }: SparklesConstellation3DProps) {
   const label =
     ariaLabel ??

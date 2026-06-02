@@ -103,7 +103,7 @@ export default function ProfileByIdPage({
   const compatibility = profile?.compatibility ?? 0.7;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-white">
+    <main className="min-h-screen bg-gradient-to-br from-[#07060d] via-[#13101f] to-[#07060d] text-white">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         <nav className="mb-4">
           <Link
@@ -117,12 +117,12 @@ export default function ProfileByIdPage({
         {/* Loading state */}
         {state === "loading" && (
           <div
-            className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 text-center"
+            className="rounded-2xl border border-[#2a2342] bg-[#13101f]/50 p-8 text-center"
             role="status"
             aria-live="polite"
           >
-            <div className="h-72 w-full rounded-xl bg-zinc-800/30 animate-pulse mb-4" />
-            <p className="text-sm text-zinc-400">Carregando perfil...</p>
+            <div className="h-72 w-full rounded-xl bg-[#2a2342]/30 animate-pulse mb-4" />
+            <p className="text-sm text-[#9a93b5]">Carregando perfil...</p>
           </div>
         )}
 
@@ -145,10 +145,10 @@ export default function ProfileByIdPage({
 
         {/* Empty state */}
         {state === "empty" && (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-10 text-center">
+          <div className="rounded-2xl border border-[#2a2342] bg-[#13101f]/50 p-10 text-center">
             <p className="text-5xl mb-3">👻</p>
             <p className="text-lg font-semibold">Perfil nao encontrado</p>
-            <p className="text-sm text-zinc-400 mt-1 mb-4">
+            <p className="text-sm text-[#9a93b5] mt-1 mb-4">
               Talvez tenha sido removido ou voce nao tem acesso a esse perfil.
             </p>
             <Link
@@ -162,7 +162,7 @@ export default function ProfileByIdPage({
 
         {/* Ready state */}
         {state === "ready" && profile && (
-          <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+          <article className="rounded-2xl border border-[#2a2342] bg-[#13101f]/40 overflow-hidden">
             {/* Heart Pulse 3D — pulsa proporcional a compatibilidade */}
             <div className="relative">
               <HeartPulse3D
@@ -170,7 +170,7 @@ export default function ProfileByIdPage({
                 ariaLabel={`Compatibilidade de ${Math.round(
                   compatibility * 100,
                 )} porcento com ${profile.displayName}`}
-                className="h-72 sm:h-80 w-full bg-gradient-to-br from-fuchsia-950/40 via-rose-950/30 to-zinc-950/60"
+                className="h-72 sm:h-80 w-full bg-gradient-to-br from-fuchsia-950/40 via-rose-950/30 to-[#07060d]/60"
               />
               <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-fuchsia-700/50 text-xs font-semibold text-fuchsia-200">
                 {Math.round(compatibility * 100)}% compativel
@@ -183,18 +183,18 @@ export default function ProfileByIdPage({
                 <h1 className="text-2xl font-bold">
                   {profile.displayName}
                   {profile.age != null && (
-                    <span className="text-zinc-400 font-normal">
+                    <span className="text-[#9a93b5] font-normal">
                       , {profile.age}
                     </span>
                   )}
                 </h1>
                 {profile.city && (
-                  <p className="text-sm text-zinc-400">{profile.city}</p>
+                  <p className="text-sm text-[#9a93b5]">{profile.city}</p>
                 )}
               </header>
 
               {profile.bio && (
-                <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                <p className="text-sm text-[#ece9f5] leading-relaxed whitespace-pre-wrap">
                   {profile.bio}
                 </p>
               )}
@@ -207,7 +207,7 @@ export default function ProfileByIdPage({
                       key={photo.id}
                       src={photo.previewUrl}
                       alt=""
-                      className="aspect-square w-full rounded-lg object-cover border border-zinc-800"
+                      className="aspect-square w-full rounded-lg object-cover border border-[#2a2342]"
                       loading="lazy"
                     />
                   ))}
@@ -223,7 +223,7 @@ export default function ProfileByIdPage({
                 </Link>
                 <Link
                   href="/buscar"
-                  className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 text-sm font-semibold transition-colors"
+                  className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#2a2342] hover:bg-[#2a2342] text-sm font-semibold transition-colors"
                 >
                   Proximo
                 </Link>

@@ -35,8 +35,8 @@ function ConnectedSpheres() {
         <mesh key={i} position={pos}>
           <sphereGeometry args={[i === 0 ? 0.5 : 0.3, 32, 32]} />
           <meshStandardMaterial
-            color={i === 0 ? "#e91e63" : "#ec407a"}
-            emissive={i === 0 ? "#ad1457" : "#c2185b"}
+            color={i === 0 ? "#d946ef" : "#e879f9"}
+            emissive={i === 0 ? "#a21caf" : "#c026d3"}
             emissiveIntensity={0.3}
             roughness={0.3}
             metalness={0.6}
@@ -49,14 +49,14 @@ function ConnectedSpheres() {
 
 export function HeroScene3D() {
   return (
-    <div className="w-full h-[400px] rounded-xl overflow-hidden bg-gradient-to-br from-pink-50 to-rose-100 dark:from-pink-950 dark:to-rose-900">
+    <div className="w-full h-[400px] rounded-xl overflow-hidden bg-gradient-to-br from-fuchsia-50 to-fuchsia-100 dark:from-fuchsia-950 dark:to-fuchsia-900">
       <Canvas
         camera={{ position: [0, 1, 6], fov: 50 }}
         gl={{ antialias: true }}
       >
         <ambientLight intensity={0.4} />
         <pointLight position={[5, 5, 5]} intensity={1.2} />
-        <pointLight position={[-5, -5, 5]} intensity={0.6} color="#ff80ab" />
+        <pointLight position={[-5, -5, 5]} intensity={0.6} color="#f0abfc" />
         <ConnectedSpheres />
       </Canvas>
     </div>

@@ -4,14 +4,14 @@
  * W3D-RELACIONAMENTOS — Tier 3 Love Sphere Scene
  *
  * Vertical config (OT-W3D-PATTERN-SPEC §3 relacionamentos):
- *   icon 💕 · accent #fbb6ce · bg 0x0a0508 · fog 0x140a10 d=0.024
+ *   icon 💕 · accent #f0abfc · bg 0x07060d · fog 0x0d0a18 d=0.024
  *   cam pos [0,6,24] rot 0.22 · bpm 80 (romantic, no strobe)
  *
- * Hero: central heart (ExtrudeGeometry red emissive) + 2.5k profiles on sphere
+ * Hero: central heart (ExtrudeGeometry fuchsia emissive) + 2.5k profiles on sphere
  *       + 12 match lines randomized
  * Crowd: 800 cherry blossoms falling parabolic + 400 sparkles flickering
- * Lighting: heart glow (pink 15W) + soft ambient (dark purple)
- * LED: Bumble (yellow #ffc628, honeycomb pattern, "bumble night sp")
+ * Lighting: heart glow (fuchsia 15W) + soft ambient (dark purple)
+ * LED: Bumble (amber #fbbf24, honeycomb pattern, "bumble night sp")
  *
  * Tier 3 (default): R3F 9 + Three r0.184 + emissive bloom stack
  * Tier 2 fallback: reduced particle counts + simplified lighting
@@ -35,17 +35,17 @@ import * as THREE from "three";
 
 const REL_CONFIG = {
   icon: "💕",
-  accent: "#fbb6ce",
-  bg: 0x0a0508,
-  fog: { color: 0x140a10, density: 0.024 },
+  accent: "#f0abfc",
+  bg: 0x07060d,
+  fog: { color: 0x0d0a18, density: 0.024 },
   cam: { position: [0, 6, 24] as [number, number, number], rotateSpeed: 0.22 },
   bpm: 80,
-  heartRed: "#e3245a",
-  heartEmissive: "#ff5577",
-  blossomPink: "#ffb6c1",
-  sparkleGold: "#ffd1dc",
-  matchLineColor: "#ff80a8",
-  bumbleYellow: "#ffc628",
+  heartRed: "#d946ef",
+  heartEmissive: "#e879f9",
+  blossomPink: "#f0abfc",
+  sparkleGold: "#f5d0fe",
+  matchLineColor: "#e879f9",
+  bumbleYellow: "#fbbf24",
 } as const;
 
 // Heartbeat helper — beat = pow(sin(beatPhase*PI), 16) (per spec §2)
@@ -532,10 +532,10 @@ function Floor() {
     >
       <circleGeometry args={[44, 64]} />
       <meshStandardMaterial
-        color="#1a0a14"
+        color="#13101f"
         roughness={0.92}
         metalness={0.08}
-        emissive="#3a0a1e"
+        emissive="#2a1530"
         emissiveIntensity={0.05}
       />
     </mesh>
@@ -574,8 +574,8 @@ function RelLighting() {
         decay={2}
       />
       {/* Dark purple ambient */}
-      <ambientLight intensity={0.22} color="#3a1a35" />
-      <hemisphereLight args={[REL_CONFIG.accent, "#080308", 0.18]} />
+      <ambientLight intensity={0.22} color="#2a2342" />
+      <hemisphereLight args={[REL_CONFIG.accent, "#07060d", 0.18]} />
     </>
   );
 }

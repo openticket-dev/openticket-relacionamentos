@@ -146,10 +146,10 @@ export interface HeartPulse3DProps {
 
 export function HeartPulse3D({
   compatibility = 0.7,
-  accent = "#f472b6",
-  glow = "#ec4899",
+  accent = "#e879f9",
+  glow = "#d946ef",
   ariaLabel,
-  className = "h-72 w-full rounded-2xl bg-zinc-950/40 border border-zinc-800",
+  className = "h-72 w-full rounded-2xl bg-[#13101f]/40 border border-[#2a2342]",
 }: HeartPulse3DProps) {
   // compatibility entra como baseScale (0.7 -> 0.85, 1.0 -> 1.0)
   const baseScale = 0.7 + Math.max(0, Math.min(1, compatibility)) * 0.3;
