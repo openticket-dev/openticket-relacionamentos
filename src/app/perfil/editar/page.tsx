@@ -1,20 +1,17 @@
-// Relacionamentos — Editar perfil (fotos + bio + prompts)
-// Sprint M8-1: editor completo com prompts (estilo Hinge), upload fotos placeholder.
-// Backend: W-R-4 wira updateProfile mutation + R2 storage upload.
+// Relacionamentos — Editar perfil (bio + prompts + interesses + identidade)
+// N100 (2026-06-04): wireado ao backend real. Carrega de myMatchProfile e salva
+// via updateMyMatchProfile (upsert) — zero localStorage. Fotos exibem as reais
+// (read-only); upload completo (storage + moderação) é fluxo dedicado à parte.
 
 "use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SUBVERTICALS } from "@/lib/subverticals";
+import { gqlRequest, GqlClientError } from "@/lib/gql-client";
 
-type Photo = { id: string; previewUrl: string };
-
-type Prompt = {
-  id: string;
-  question: string;
-  answer: string;
-};
+type Prompt = { id: string; question: string; answer: string };
+type Photo = { id: string; url: string; isPrimary: boolean; position: number };
 
 const PROMPT_OPTIONS = [
   "Meu domingo perfeito é...",
@@ -31,11 +28,8 @@ type EditorState = {
   age: string;
   city: string;
   interests: string[];
-  photos: Photo[];
   prompts: Prompt[];
 };
-
-const STORAGE_KEY = "relac:perfil-editor";
 
 const INITIAL: EditorState = {
   displayName: "",
@@ -43,27 +37,89 @@ const INITIAL: EditorState = {
   age: "",
   city: "",
   interests: [],
-  photos: [],
   prompts: [],
 };
 
+const MY_MATCH_PROFILE = /* GraphQL */ `
+  query MyMatchProfile {
+    myMatchProfile {
+      displayName
+      bio
+      declaredAge
+      city
+      interests
+      prompts { question answer }
+      photos { id url isPrimary position }
+    }
+  }
+`;
+
+const UPDATE_PROFILE = /* GraphQL */ `
+  mutation UpdateMyMatchProfile($input: UpdateMyMatchProfileInput!) {
+    updateMyMatchProfile(input: $input) {
+      id
+      completeness
+    }
+  }
+`;
+
 export default function PerfilEditarPage() {
   const [form, setForm] = useState<EditorState>(INITIAL);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setForm({ ...INITIAL, ...JSON.parse(raw) });
-    } catch {
-      // ignore
-    }
+    let alive = true;
+    (async () => {
+      try {
+        const data = await gqlRequest<{
+          myMatchProfile: {
+            displayName?: string | null;
+            bio?: string | null;
+            declaredAge?: number | null;
+            city?: string | null;
+            interests?: string[] | null;
+            prompts?: { question: string; answer: string }[] | null;
+            photos?: Photo[] | null;
+          } | null;
+        }>(MY_MATCH_PROFILE);
+        if (!alive) return;
+        const p = data.myMatchProfile;
+        if (p) {
+          setForm({
+            displayName: p.displayName ?? "",
+            bio: p.bio ?? "",
+            age: p.declaredAge ? String(p.declaredAge) : "",
+            city: p.city ?? "",
+            interests: p.interests ?? [],
+            prompts: (p.prompts ?? []).map((pr, i) => ({
+              id: `pr-${i}`,
+              question: pr.question,
+              answer: pr.answer,
+            })),
+          });
+          setPhotos(p.photos ?? []);
+        }
+      } catch (e) {
+        if (alive)
+          setError(
+            e instanceof GqlClientError
+              ? e.message
+              : "Não foi possível carregar seu perfil.",
+          );
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const update = <K extends keyof EditorState>(
-    key: K,
-    value: EditorState[K],
-  ) => {
+  const update = <K extends keyof EditorState>(key: K, value: EditorState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setSaved(false);
   };
@@ -74,28 +130,6 @@ export default function PerfilEditarPage() {
       interests: prev.interests.includes(slug)
         ? prev.interests.filter((s) => s !== slug)
         : [...prev.interests, slug],
-    }));
-    setSaved(false);
-  };
-
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // PLACEHOLDER: cria preview local. W-R-4 fara upload pro R2 e salva URL real.
-    const previewUrl = URL.createObjectURL(file);
-    const id = `local-${Date.now()}`;
-    setForm((prev) => ({
-      ...prev,
-      photos: [...prev.photos, { id, previewUrl }].slice(0, 6),
-    }));
-    setSaved(false);
-    e.target.value = "";
-  };
-
-  const removePhoto = (id: string) => {
-    setForm((prev) => ({
-      ...prev,
-      photos: prev.photos.filter((p) => p.id !== id),
     }));
     setSaved(false);
   };
@@ -128,21 +162,44 @@ export default function PerfilEditarPage() {
     setSaved(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setError(null);
     try {
-      // PLACEHOLDER: salva tudo em localStorage. W-R-4 chamara updateProfile mutation.
-      const toPersist = {
-        ...form,
-        // photos com URL.createObjectURL nao persistem entre reloads — guardamos so ids
-        photos: form.photos.map((p) => ({ id: p.id, previewUrl: "" })),
+      const ageNum = parseInt(form.age, 10);
+      const input: Record<string, unknown> = {
+        displayName: form.displayName,
+        bio: form.bio,
+        city: form.city,
+        interests: form.interests,
+        prompts: form.prompts
+          .filter((p) => p.answer.trim())
+          .map((p) => ({ question: p.question, answer: p.answer })),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
+      if (!Number.isNaN(ageNum) && ageNum > 0) input.declaredAge = ageNum;
+      await gqlRequest(UPDATE_PROFILE, { input });
       setSaved(true);
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(
+        err instanceof GqlClientError
+          ? err.message
+          : "Não foi possível salvar. Tente novamente.",
+      );
+    } finally {
+      setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <main className="min-h-screen p-6 max-w-3xl mx-auto">
+        <p className="text-center py-16 text-muted-foreground text-sm">
+          Carregando editor...
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen p-6 max-w-3xl mx-auto">
@@ -150,7 +207,7 @@ export default function PerfilEditarPage() {
         <div>
           <h1 className="text-3xl font-bold">Editar perfil</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Fotos, bio, prompts. Persistencia backend em W-R-4.
+            Identidade, bio, prompts e interesses.
           </p>
         </div>
         <Link
@@ -162,48 +219,37 @@ export default function PerfilEditarPage() {
       </header>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Fotos */}
+        {/* Fotos (read-only — gerenciamento completo no fluxo de fotos) */}
         <fieldset className="rounded-xl border border-border p-4">
           <legend className="px-2 text-sm font-medium">
-            Fotos ({form.photos.length}/6)
+            Fotos ({photos.length})
           </legend>
-          <p className="text-xs text-muted-foreground mt-1 mb-3">
-            Min 2 fotos recomendado. Upload pro R2 sera ligado em W-R-4.
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {form.photos.map((p, idx) => (
-              <div
-                key={p.id}
-                className="relative aspect-square rounded-lg overflow-hidden border border-border bg-muted"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.previewUrl}
-                  alt={`Foto de perfil ${idx + 1}`}
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePhoto(p.id)}
-                  aria-label="Remover foto"
-                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-xs hover:bg-black"
+          {photos.length > 0 ? (
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {photos.map((p, idx) => (
+                <div
+                  key={p.id}
+                  className="relative aspect-square rounded-lg overflow-hidden border border-border bg-muted"
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
-            {form.photos.length < 6 && (
-              <label className="aspect-square rounded-lg border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:bg-accent text-2xl text-muted-foreground">
-                +
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoSelect}
-                />
-              </label>
-            )}
-          </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.url}
+                    alt={`Foto de perfil ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  {p.isPrimary && (
+                    <span className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded-full bg-fuchsia-600 text-white">
+                      Principal
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">
+              Nenhuma foto ainda.
+            </p>
+          )}
         </fieldset>
 
         {/* Identidade */}
@@ -326,7 +372,7 @@ export default function PerfilEditarPage() {
             Interesses ({form.interests.length})
           </legend>
           <p className="text-xs text-muted-foreground mt-1 mb-3">
-            Influencia o algoritmo de matching (W-R-3).
+            Influencia o algoritmo de matching.
           </p>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {SUBVERTICALS.map((sv) => {
@@ -350,12 +396,17 @@ export default function PerfilEditarPage() {
           </div>
         </fieldset>
 
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+
         <div className="flex items-center gap-3 pt-4 border-t border-border">
           <button
             type="submit"
-            className="px-6 py-2 rounded-lg bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700"
+            disabled={saving}
+            className="px-6 py-2 rounded-lg bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 disabled:opacity-60"
           >
-            Salvar perfil
+            {saving ? "Salvando..." : "Salvar perfil"}
           </button>
           <Link
             href="/perfil/verificar"
@@ -365,7 +416,7 @@ export default function PerfilEditarPage() {
           </Link>
           {saved && (
             <span className="text-sm text-emerald-600 dark:text-emerald-400">
-              Salvo localmente. Backend em W-R-4.
+              Perfil salvo ✓
             </span>
           )}
         </div>
