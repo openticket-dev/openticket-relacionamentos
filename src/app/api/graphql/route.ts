@@ -116,6 +116,23 @@ export async function POST(req: NextRequest) {
 
     let authHeader: string | null = null;
 
+    // Tenant claim from the client-readable cookie set by /negocios after a
+    // company pick. This is the active-company shim (mirrors openticket-shell
+    // and the varejo useCompanyId fix PR #55):
+    //
+    // A SUPER_ADMIN (CEO / OpenTicket staff) has `companyId === null` in the
+    // NextAuth session and in the `ot_access_token` JWT, because their scope is
+    // global, not tied to one company. They pick the active company in
+    // /negocios, which writes the non-httpOnly `ot_company_id` cookie. Without
+    // reading that cookie here, the synthesized JWT carried `companyId: null`
+    // and every company-scoped query returned 0 rows / "sem empresa vinculada".
+    //
+    // SECURITY (multi-tenant): the cookie only ever takes effect as a FALLBACK
+    // when the token/session has no companyId of its own (i.e. SUPER_ADMIN). A
+    // regular tenant user keeps their session companyId untouched — the cookie
+    // never overrides a real session scope, so no cross-tenant leakage.
+    const cookieCompanyId = cookieStore.get("ot_company_id")?.value || null;
+
     // Tier 1: own auth cookie set by the shell on the shared domain.
     const otToken =
       cookieStore.get("ot_access_token")?.value ||
@@ -130,7 +147,7 @@ export async function POST(req: NextRequest) {
           email: decoded.email,
           name: decoded.name || null,
           role: decoded.role || "USER",
-          companyId: decoded.companyId || null,
+          companyId: (decoded.companyId as string) || cookieCompanyId,
         });
         authHeader = `Bearer ${synth}`;
       } else {
@@ -149,7 +166,7 @@ export async function POST(req: NextRequest) {
           email: session.email ?? null,
           name: session.name ?? null,
           role: (session.role as string) || "USER",
-          companyId: (session.companyId as string) || null,
+          companyId: (session.companyId as string) || cookieCompanyId,
         });
         authHeader = `Bearer ${synth}`;
       }
