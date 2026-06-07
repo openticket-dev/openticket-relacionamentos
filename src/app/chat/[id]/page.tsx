@@ -5,9 +5,10 @@
 // resolvido comparando senderId com myMatchProfile.profileId (== user.sub).
 // Zero-mock: sem conversa fake; estados loading/ready/empty/error reais.
 //
-// NOTA de contrato (RelacMessage entity): { id conversationId senderId content
-// createdAt readAt } — o gateway so trafega texto. GIF/audio/foto sao TODO de
-// upload (R2) numa wave futura; por ora o envio e text-only (honesto).
+// Onda I (s6) CHAT MEDIA: anexo de foto/audio/gif via R2 (presigned PUT).
+//   Fluxo: prepareMessageUpload (mutation) -> PUT bytes direto no R2 ->
+//   sendMessage com attachmentUrl/Type/Mime. Render inline por tipo. O backend
+//   modera o anexo (attachmentStatus PENDING ate liberar).
 
 "use client";
 
@@ -21,6 +22,10 @@ const MESSAGES_QUERY = /* GraphQL */ `
       conversationId
       senderId
       content
+      attachmentUrl
+      attachmentType
+      attachmentMime
+      attachmentStatus
       createdAt
       readAt
     }
@@ -42,19 +47,52 @@ const SEND_MESSAGE_MUTATION = /* GraphQL */ `
       conversationId
       senderId
       content
+      attachmentUrl
+      attachmentType
+      attachmentMime
+      attachmentStatus
       createdAt
       readAt
     }
   }
 `;
 
+const PREPARE_UPLOAD_MUTATION = /* GraphQL */ `
+  mutation PrepareMessageUpload($input: PrepareMessageUploadInput!) {
+    prepareMessageUpload(input: $input) {
+      key
+      uploadUrl
+      attachmentUrl
+      attachmentType
+      attachmentMime
+    }
+  }
+`;
+
+// MIMEs aceitos pelo backend (CHAT_ATTACHMENT_MIME em conversation.service.ts).
+const ACCEPTED_MIME =
+  "image/jpeg,image/png,image/webp,image/avif,image/gif,audio/webm,audio/mp4,audio/mpeg,audio/ogg,audio/wav";
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB
+
 interface RelacMessage {
   id: string;
   conversationId: string;
   senderId: string;
   content: string;
+  attachmentUrl: string | null;
+  attachmentType: string | null;
+  attachmentMime: string | null;
+  attachmentStatus: string | null;
   createdAt: string;
   readAt: string | null;
+}
+
+interface PrepareUploadResult {
+  key: string;
+  uploadUrl: string;
+  attachmentUrl: string;
+  attachmentType: string;
+  attachmentMime: string;
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
@@ -96,7 +134,9 @@ export default function ChatPage({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -151,6 +191,62 @@ export default function ChatPage({
       );
     } finally {
       setSending(false);
+    }
+  };
+
+  // Anexo: 1) prepareMessageUpload -> presigned PUT R2; 2) PUT bytes direto no
+  // R2; 3) sendMessage com a attachmentUrl. Zero-mock: se o backend nao tem R2
+  // configurado, prepareMessageUpload retorna erro NOT_IMPLEMENTED e mostramos.
+  const handleAttachment = async (file: File) => {
+    if (uploading || sending) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setSendError("Anexo grande demais (max 10MB).");
+      return;
+    }
+    setUploading(true);
+    setSendError(null);
+    try {
+      // 1) Pede a URL pre-assinada (scoped por conversa, anti-IDOR no backend).
+      const prep = await gql<{ prepareMessageUpload: PrepareUploadResult }>(
+        PREPARE_UPLOAD_MUTATION,
+        { input: { conversationId, contentType: file.type } },
+      );
+      const { uploadUrl, attachmentUrl, attachmentType, attachmentMime } =
+        prep.prepareMessageUpload;
+
+      // 2) Sobe os bytes direto pro R2 (sem proxy de bytes pelo server).
+      const put = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": attachmentMime },
+        body: file,
+      });
+      if (!put.ok) {
+        throw new Error(`Falha no upload pro storage (HTTP ${put.status}).`);
+      }
+
+      // 3) Envia a mensagem com o anexo (content opcional vai junto se houver).
+      const res = await gql<{ sendMessage: RelacMessage }>(
+        SEND_MESSAGE_MUTATION,
+        {
+          input: {
+            conversationId,
+            content: draft.trim() || undefined,
+            attachmentUrl,
+            attachmentType,
+            attachmentMime,
+          },
+        },
+      );
+      setMessages((prev) => [...prev, res.sendMessage]);
+      setDraft("");
+      if (state === "empty") setState("ready");
+    } catch (err) {
+      setSendError(
+        err instanceof Error ? err.message : "Falha ao enviar anexo",
+      );
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -255,9 +351,12 @@ export default function ChatPage({
                       : "bg-muted text-foreground"
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words">
-                    {m.content}
-                  </p>
+                  {m.attachmentUrl && <Attachment message={m} />}
+                  {m.content && (
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {m.content}
+                    </p>
+                  )}
                   <div
                     className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
                       fromMe ? "text-fuchsia-100" : "text-muted-foreground"
@@ -286,8 +385,29 @@ export default function ChatPage({
 
       <form
         onSubmit={handleSendText}
-        className="p-4 border-t border-border flex gap-2"
+        className="p-4 border-t border-border flex gap-2 items-center"
       >
+        {/* Anexo: foto / audio / gif via R2 (presigned PUT). */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_MIME}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleAttachment(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading || sending}
+          title="Anexar foto, audio ou GIF"
+          aria-label="Anexar foto, audio ou GIF"
+          className="px-3 py-2 rounded-full border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-lg"
+        >
+          {uploading ? "⏳" : "📎"}
+        </button>
         <input
           type="text"
           value={draft}
@@ -297,12 +417,51 @@ export default function ChatPage({
         />
         <button
           type="submit"
-          disabled={!draft.trim() || sending}
+          disabled={!draft.trim() || sending || uploading}
           className="px-6 py-2 rounded-full bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {sending ? "..." : "Enviar"}
         </button>
       </form>
     </main>
+  );
+}
+
+/**
+ * Render inline do anexo por tipo. attachmentStatus PENDING mostra um aviso de
+ * moderacao (o backend libera apos o classificador). image/gif -> <img>,
+ * audio -> <audio controls>.
+ */
+function Attachment({ message }: { message: RelacMessage }) {
+  const { attachmentUrl, attachmentType, attachmentStatus } = message;
+  if (!attachmentUrl) return null;
+  const pending = attachmentStatus === "PENDING";
+  const isAudio = attachmentType === "audio";
+
+  return (
+    <div className="mb-1.5">
+      {isAudio ? (
+        <audio
+          controls
+          src={attachmentUrl}
+          className="w-full max-w-[260px]"
+          preload="metadata"
+        />
+      ) : (
+        /* image | gif */
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={attachmentUrl}
+          alt={attachmentType === "gif" ? "GIF" : "Foto"}
+          className="rounded-lg max-h-64 w-auto object-cover"
+          loading="lazy"
+        />
+      )}
+      {pending && (
+        <p className="text-[10px] opacity-80 mt-0.5">
+          ⏳ Em moderacao
+        </p>
+      )}
+    </div>
   );
 }
