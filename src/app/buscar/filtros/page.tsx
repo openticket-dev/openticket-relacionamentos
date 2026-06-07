@@ -1,6 +1,9 @@
 // Relacionamentos — Filtros de busca
 // Sprint M8-1: idade, distancia, intencao, subverticais.
-// Persistencia local (localStorage) ate W-R-2 ligar mutation savePreferences.
+// Onda I (s6) WIRE_REAL: persistencia no BACKEND via updateRelationshipPreferences
+//   (camaleao). O backend espelha os filtros no RelationshipProfile.preferences
+//   que o DiscoveryService le -> o feed (discoverProfiles) passa a respeitar os
+//   filtros server-side. localStorage vira so cache otimista (UX), nao a fonte.
 
 "use client";
 
@@ -37,18 +40,115 @@ const INTENTS: { value: Intent; label: string; emoji: string }[] = [
   { value: "friendship", label: "Amizade", emoji: "🤝" },
 ];
 
+// ── Mapeamento front <-> backend ─────────────────────────────────────────────
+// intent (UI) -> preferredIntent (enum camaleao: ALMA_GEMEA/AMIZADE/NETWORKING/
+//   COMUNIDADE). "any" = sem preferencia (null). casual/serious -> ALMA_GEMEA
+//   (romantico), friendship -> AMIZADE.
+const INTENT_TO_BACKEND: Record<Intent, string | null> = {
+  any: null,
+  casual: "ALMA_GEMEA",
+  serious: "ALMA_GEMEA",
+  friendship: "AMIZADE",
+};
+const BACKEND_TO_INTENT: Record<string, Intent> = {
+  ALMA_GEMEA: "serious",
+  AMIZADE: "friendship",
+  NETWORKING: "any",
+  COMUNIDADE: "any",
+};
+
+const GQL_QUERY = /* GraphQL */ `
+  query RelationshipPreferences {
+    relationshipPreferences {
+      desiredAgeMin
+      desiredAgeMax
+      maxDistanceKm
+      preferredIntent
+      metadata
+    }
+  }
+`;
+
+const GQL_MUTATION = /* GraphQL */ `
+  mutation UpdateRelationshipPreferences($input: UpdatePreferencesInputDto!) {
+    updateRelationshipPreferences(input: $input) {
+      id
+    }
+  }
+`;
+
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    data?: T;
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  if (!json.data) throw new Error("No data returned");
+  return json.data;
+}
+
 export default function FiltrosPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Hidratar do localStorage no mount
+  // Hidratar: backend (fonte de verdade) com fallback pro localStorage (cache).
   useEffect(() => {
+    let cancelled = false;
+    // cache otimista imediato pra evitar flash
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) setFilters({ ...DEFAULT_FILTERS, ...JSON.parse(raw) });
     } catch {
-      // localStorage indisponivel — manter defaults
+      /* localStorage indisponivel */
     }
+    (async () => {
+      try {
+        const data = await gql<{
+          relationshipPreferences: {
+            desiredAgeMin: number | null;
+            desiredAgeMax: number | null;
+            maxDistanceKm: number | null;
+            preferredIntent: string | null;
+            metadata: Record<string, unknown> | null;
+          } | null;
+        }>(GQL_QUERY);
+        const p = data.relationshipPreferences;
+        if (cancelled || !p) return;
+        const meta = (p.metadata ?? {}) as {
+          verticals?: string[];
+          verifiedOnly?: boolean;
+        };
+        setFilters({
+          ageMin: p.desiredAgeMin ?? DEFAULT_FILTERS.ageMin,
+          ageMax: p.desiredAgeMax ?? DEFAULT_FILTERS.ageMax,
+          distanceKm: p.maxDistanceKm ?? DEFAULT_FILTERS.distanceKm,
+          intent: p.preferredIntent
+            ? (BACKEND_TO_INTENT[p.preferredIntent] ?? "any")
+            : "any",
+          verticals: Array.isArray(meta.verticals) ? meta.verticals : [],
+          verifiedOnly: !!meta.verifiedOnly,
+        });
+      } catch {
+        // Sem backend/sessao -> mantem o que veio do localStorage (degrade ok).
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const update = <K extends keyof Filters>(key: K, value: Filters[K]) => {
@@ -66,13 +166,43 @@ export default function FiltrosPage() {
     setSaved(false);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    // cache otimista local (UX) — backend e a fonte de verdade.
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
-      setSaved(true);
     } catch {
-      // ignore
+      /* ignore */
+    }
+    try {
+      await gql(GQL_MUTATION, {
+        input: {
+          desiredAgeMin: filters.ageMin,
+          desiredAgeMax: filters.ageMax,
+          maxDistanceKm: filters.distanceKm,
+          preferredIntent: INTENT_TO_BACKEND[filters.intent],
+          // metadata carrega o que nao tem coluna propria (verticals/verifiedOnly).
+          // O backend espelha verticals -> subverticais e verifiedOnly no blob
+          // de discovery (RelationshipProfile.preferences).
+          metadata: {
+            verticals: filters.verticals,
+            verifiedOnly: filters.verifiedOnly,
+          },
+        },
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Falha ao salvar filtros no servidor",
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -84,6 +214,7 @@ export default function FiltrosPage() {
       // ignore
     }
     setSaved(false);
+    setError(null);
   };
 
   return (
@@ -92,7 +223,7 @@ export default function FiltrosPage() {
         <div>
           <h1 className="text-3xl font-bold">Filtros</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure sua busca. Persistencia local ate W-R-2 wirar backend.
+            Configure sua busca. Salvo no servidor e aplicado ao feed.
           </p>
         </div>
         <Link
@@ -228,20 +359,27 @@ export default function FiltrosPage() {
         <div className="flex items-center gap-3 pt-2">
           <button
             type="submit"
-            className="px-6 py-2 rounded-lg bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700"
+            disabled={saving}
+            className="px-6 py-2 rounded-lg bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Aplicar filtros
+            {saving ? "Salvando..." : "Aplicar filtros"}
           </button>
           <button
             type="button"
             onClick={handleReset}
-            className="px-4 py-2 rounded-lg border border-border hover:bg-accent text-sm"
+            disabled={saving}
+            className="px-4 py-2 rounded-lg border border-border hover:bg-accent text-sm disabled:opacity-50"
           >
             Resetar
           </button>
-          {saved && (
+          {saved && !error && (
             <span className="text-sm text-emerald-600 dark:text-emerald-400">
-              Filtros salvos localmente.
+              Filtros salvos e aplicados ao feed.
+            </span>
+          )}
+          {error && (
+            <span className="text-sm text-rose-600 dark:text-rose-400" role="alert">
+              {error}
             </span>
           )}
         </div>
