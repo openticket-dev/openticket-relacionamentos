@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    OpenTicket Heraldic Crest — imperialCrest QR variant centerpiece.
+    Elements: crown, mantle drapery, quartered shield with OT monogram,
+    laurel branches, and OPENTICKET ribbon.
+    Designed to remain legible at ~110-130px (≈30% of 400px QR).
+  -->
+  <defs>
+    <linearGradient id="goldV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8e29a"/>
+      <stop offset="45%" stop-color="#d4af37"/>
+      <stop offset="55%" stop-color="#b8941e"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="goldH" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#b8941e"/>
+      <stop offset="50%" stop-color="#f4d47c"/>
+      <stop offset="100%" stop-color="#b8941e"/>
+    </linearGradient>
+    <linearGradient id="shieldBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a5ea8"/>
+      <stop offset="100%" stop-color="#0a2a5e"/>
+    </linearGradient>
+    <linearGradient id="shieldGreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3d8948"/>
+      <stop offset="100%" stop-color="#1c5228"/>
+    </linearGradient>
+    <linearGradient id="mantleBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a4d9e"/>
+      <stop offset="100%" stop-color="#0a1f4a"/>
+    </linearGradient>
+    <radialGradient id="rubyRed" cx="0.35" cy="0.35">
+      <stop offset="0%" stop-color="#ff6b7a"/>
+      <stop offset="50%" stop-color="#c41e3a"/>
+      <stop offset="100%" stop-color="#6b0000"/>
+    </radialGradient>
+    <radialGradient id="sapphire" cx="0.35" cy="0.35">
+      <stop offset="0%" stop-color="#6fa8ff"/>
+      <stop offset="50%" stop-color="#1e5fc4"/>
+      <stop offset="100%" stop-color="#0a1f6b"/>
+    </radialGradient>
+    <radialGradient id="emerald" cx="0.35" cy="0.35">
+      <stop offset="0%" stop-color="#7aff9e"/>
+      <stop offset="50%" stop-color="#1e9c43"/>
+      <stop offset="100%" stop-color="#0a3a1a"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+
+  <!-- Mantle / drapery behind shield -->
+  <g transform="translate(200 230)" opacity="0.92">
+    <path d="M-135,-110 Q-165,-85 -155,-25 Q-145,40 -115,90
+             L115,90 Q145,40 155,-25 Q165,-85 135,-110
+             L85,-125 L0,-115 L-85,-125 Z"
+          fill="url(#mantleBlue)" stroke="url(#goldV)" stroke-width="2"/>
+    <!-- Gold trim lines -->
+    <path d="M-135,-110 Q-165,-85 -155,-25 Q-145,40 -115,90"
+          fill="none" stroke="url(#goldV)" stroke-width="1.3"/>
+    <path d="M135,-110 Q165,-85 155,-25 Q145,40 115,90"
+          fill="none" stroke="url(#goldV)" stroke-width="1.3"/>
+    <!-- Ermine spots pattern on mantle -->
+    <g fill="#f4d47c" opacity="0.55">
+      <circle cx="-100" cy="-70" r="1.5"/>
+      <circle cx="-70" cy="-95" r="1.5"/>
+      <circle cx="-120" cy="-30" r="1.5"/>
+      <circle cx="-85" cy="10" r="1.5"/>
+      <circle cx="-110" cy="50" r="1.5"/>
+      <circle cx="100" cy="-70" r="1.5"/>
+      <circle cx="70" cy="-95" r="1.5"/>
+      <circle cx="120" cy="-30" r="1.5"/>
+      <circle cx="85" cy="10" r="1.5"/>
+      <circle cx="110" cy="50" r="1.5"/>
+    </g>
+    <!-- Mantle tassels (left & right) -->
+    <g transform="translate(-130 -5)">
+      <path d="M0,0 L-6,20 L-12,40 L-6,60 L0,70 L6,60 L12,40 L6,20 Z"
+            fill="url(#goldV)" stroke="#8b6914" stroke-width="0.6"/>
+      <circle cx="0" cy="-8" r="8" fill="url(#goldV)" stroke="#8b6914" stroke-width="0.8"/>
+    </g>
+    <g transform="translate(130 -5)">
+      <path d="M0,0 L-6,20 L-12,40 L-6,60 L0,70 L6,60 L12,40 L6,20 Z"
+            fill="url(#goldV)" stroke="#8b6914" stroke-width="0.6"/>
+      <circle cx="0" cy="-8" r="8" fill="url(#goldV)" stroke="#8b6914" stroke-width="0.8"/>
+    </g>
+  </g>
+
+  <!-- Crown -->
+  <g transform="translate(200 95)">
+    <!-- Crown base band -->
+    <rect x="-68" y="-4" width="136" height="14" fill="url(#goldV)" stroke="#8b6914" stroke-width="1.2"/>
+    <rect x="-68" y="10" width="136" height="5" fill="#8b6914"/>
+    <!-- Band jewels (alternating ruby/sapphire) -->
+    <circle cx="-50" cy="3" r="3.5" fill="url(#rubyRed)"/>
+    <circle cx="-25" cy="3" r="3.5" fill="url(#sapphire)"/>
+    <circle cx="0" cy="3" r="3.5" fill="url(#emerald)"/>
+    <circle cx="25" cy="3" r="3.5" fill="url(#sapphire)"/>
+    <circle cx="50" cy="3" r="3.5" fill="url(#rubyRed)"/>
+    <!-- Crown points -->
+    <path d="M-68,-4 L-55,-36 L-38,-18 L-22,-46 L-8,-22 L0,-58 L8,-22 L22,-46 L38,-18 L55,-36 L68,-4 Z"
+          fill="url(#goldV)" stroke="#8b6914" stroke-width="1.2"/>
+    <!-- Jewels on points -->
+    <circle cx="-55" cy="-36" r="4.5" fill="url(#rubyRed)" stroke="#8b6914" stroke-width="0.4"/>
+    <circle cx="-22" cy="-46" r="5" fill="url(#sapphire)" stroke="#8b6914" stroke-width="0.4"/>
+    <circle cx="0" cy="-58" r="6" fill="url(#emerald)" stroke="#8b6914" stroke-width="0.5"/>
+    <circle cx="22" cy="-46" r="5" fill="url(#sapphire)" stroke="#8b6914" stroke-width="0.4"/>
+    <circle cx="55" cy="-36" r="4.5" fill="url(#rubyRed)" stroke="#8b6914" stroke-width="0.4"/>
+    <!-- Cross on top -->
+    <g transform="translate(0 -70)">
+      <rect x="-3" y="-10" width="6" height="22" fill="url(#goldV)" stroke="#8b6914" stroke-width="0.6"/>
+      <rect x="-8" y="-3" width="16" height="6" fill="url(#goldV)" stroke="#8b6914" stroke-width="0.6"/>
+      <circle cx="0" cy="-12" r="2.5" fill="url(#rubyRed)"/>
+    </g>
+  </g>
+
+  <!-- Laurel branches (leaves + stem) -->
+  <g stroke="#8b6914" stroke-width="0.6">
+    <!-- Left branch -->
+    <path d="M115,305 Q85,315 65,295 Q50,270 55,235 Q62,195 85,170"
+          fill="none" stroke="url(#goldV)" stroke-width="2.5"/>
+    <g fill="url(#goldV)">
+      <ellipse cx="83" cy="180" rx="8" ry="3.5" transform="rotate(-55 83 180)"/>
+      <ellipse cx="68" cy="210" rx="8" ry="3.5" transform="rotate(-70 68 210)"/>
+      <ellipse cx="58" cy="245" rx="8" ry="3.5" transform="rotate(-90 58 245)"/>
+      <ellipse cx="62" cy="275" rx="8" ry="3.5" transform="rotate(-110 62 275)"/>
+      <ellipse cx="78" cy="300" rx="8" ry="3.5" transform="rotate(-135 78 300)"/>
+      <ellipse cx="100" cy="170" rx="7" ry="3" transform="rotate(-35 100 170)"/>
+      <ellipse cx="80" cy="195" rx="7" ry="3" transform="rotate(-70 80 195)"/>
+      <ellipse cx="68" cy="230" rx="7" ry="3" transform="rotate(-95 68 230)"/>
+    </g>
+    <!-- Right branch (mirror) -->
+    <path d="M285,305 Q315,315 335,295 Q350,270 345,235 Q338,195 315,170"
+          fill="none" stroke="url(#goldV)" stroke-width="2.5"/>
+    <g fill="url(#goldV)">
+      <ellipse cx="317" cy="180" rx="8" ry="3.5" transform="rotate(55 317 180)"/>
+      <ellipse cx="332" cy="210" rx="8" ry="3.5" transform="rotate(70 332 210)"/>
+      <ellipse cx="342" cy="245" rx="8" ry="3.5" transform="rotate(90 342 245)"/>
+      <ellipse cx="338" cy="275" rx="8" ry="3.5" transform="rotate(110 338 275)"/>
+      <ellipse cx="322" cy="300" rx="8" ry="3.5" transform="rotate(135 322 300)"/>
+      <ellipse cx="300" cy="170" rx="7" ry="3" transform="rotate(35 300 170)"/>
+      <ellipse cx="320" cy="195" rx="7" ry="3" transform="rotate(70 320 195)"/>
+      <ellipse cx="332" cy="230" rx="7" ry="3" transform="rotate(95 332 230)"/>
+    </g>
+  </g>
+
+  <!-- Shield -->
+  <g transform="translate(200 240)" filter="url(#softShadow)">
+    <!-- Shadow -->
+    <path d="M-82,-80 L-82,32 Q-82,85 0,105 Q82,85 82,32 L82,-80 Z" fill="#000" opacity="0.3" transform="translate(3 3)"/>
+  </g>
+  <g transform="translate(200 240)">
+    <!-- Shield outline -->
+    <path d="M-82,-80 L-82,32 Q-82,85 0,105 Q82,85 82,32 L82,-80 Z"
+          fill="url(#shieldBlue)" stroke="url(#goldV)" stroke-width="4"/>
+    <!-- Inner decorative border -->
+    <path d="M-75,-73 L-75,30 Q-75,78 0,97 Q75,78 75,30 L75,-73 Z"
+          fill="none" stroke="url(#goldV)" stroke-width="1" opacity="0.7"/>
+    <!-- Quartering -->
+    <path d="M0,-80 L0,105" stroke="url(#goldV)" stroke-width="1" opacity="0.5"/>
+    <path d="M-82,-12 Q-75,-14 0,-12 Q75,-14 82,-12" stroke="url(#goldV)" stroke-width="1" opacity="0.5" fill="none"/>
+    <!-- Green quarters (top-right, bottom-left) -->
+    <path d="M0,-80 L82,-80 L82,-12 Q75,-14 0,-12 Z" fill="url(#shieldGreen)"/>
+    <path d="M-82,-12 Q-75,-14 0,-12 L0,105 Q-45,93 -82,32 Z" fill="url(#shieldGreen)"/>
+    <!-- OT monogram large in center -->
+    <text x="0" y="22" text-anchor="middle"
+          font-family="'Cinzel', 'Trajan Pro', Georgia, serif"
+          font-size="62" font-weight="900" letter-spacing="-3"
+          fill="url(#goldV)" stroke="#6b4d10" stroke-width="0.8"
+          paint-order="stroke fill">OT</text>
+    <!-- Small fleur-de-lis in corners -->
+    <g fill="url(#goldV)" opacity="0.85">
+      <g transform="translate(-48 -45) scale(0.35)">
+        <path d="M0,-25 L-6,-10 L-15,-5 L-9,5 L-15,15 L0,10 L15,15 L9,5 L15,-5 L6,-10 Z M-15,20 L15,20 L10,25 L-10,25 Z"/>
+      </g>
+      <g transform="translate(48 60) scale(0.35)">
+        <path d="M0,-25 L-6,-10 L-15,-5 L-9,5 L-15,15 L0,10 L15,15 L9,5 L15,-5 L6,-10 Z M-15,20 L15,20 L10,25 L-10,25 Z"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Ribbon banner -->
+  <g transform="translate(200 345)">
+    <!-- Ribbon tails -->
+    <path d="M-115,-10 L-135,10 L-115,15 L-100,5 Z" fill="#b8941e" stroke="#8b6914" stroke-width="0.6"/>
+    <path d="M115,-10 L135,10 L115,15 L100,5 Z" fill="#b8941e" stroke="#8b6914" stroke-width="0.6"/>
+    <!-- Main banner -->
+    <path d="M-105,-5 L-95,12 L-105,28 L-85,22 L-70,30 L0,26 L70,30 L85,22 L105,28 L95,12 L105,-5 L70,5 L0,2 L-70,5 Z"
+          fill="url(#goldH)" stroke="#8b6914" stroke-width="1"/>
+    <text x="0" y="19" text-anchor="middle"
+          font-family="'Cinzel', 'Trajan Pro', Georgia, serif"
+          font-size="14" font-weight="900" letter-spacing="4"
+          fill="#3d2817">OPENTICKET</text>
+  </g>
+</svg>
