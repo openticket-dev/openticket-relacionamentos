@@ -41,7 +41,14 @@ export default function RelacionamentosAdminPage() {
           </Link>
           .
         </p>
-        <div className="flex justify-center gap-3 pt-2">
+        <div className="flex flex-wrap justify-center gap-3 pt-2">
+          {/* Rota local do ERP — o shell proxia /relacionamentos/admin/* aqui. */}
+          <Link
+            href="/admin/qr-designer"
+            className="px-5 py-2.5 rounded-lg border border-fuchsia-600 text-fuchsia-600 font-semibold hover:bg-fuchsia-50 transition-colors text-sm"
+          >
+            QR Designer
+          </Link>
           <Link
             href="/landing"
             className="px-5 py-2.5 rounded-lg bg-fuchsia-600 text-white font-semibold hover:bg-fuchsia-700 transition-colors text-sm"

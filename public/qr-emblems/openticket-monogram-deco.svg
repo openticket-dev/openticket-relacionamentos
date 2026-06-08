@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    OpenTicket Art Deco Monogram — midnightGold QR variant centerpiece.
+    1920s hotel-branding vibe: interlocking OT, sunburst of 24 rays,
+    double concentric rings with ornamental notches, fleuron diamonds
+    at the cardinal points. All gold on transparent (black circle comes
+    from the variant background). Designed to stay legible at ~110-130px.
+  -->
+  <defs>
+    <linearGradient id="deco-goldV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8e29a"/>
+      <stop offset="40%" stop-color="#e6c659"/>
+      <stop offset="55%" stop-color="#c49a28"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="deco-goldH" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#b8941e"/>
+      <stop offset="50%" stop-color="#f4d47c"/>
+      <stop offset="100%" stop-color="#b8941e"/>
+    </linearGradient>
+    <linearGradient id="deco-goldBright" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff4c4"/>
+      <stop offset="50%" stop-color="#f4d47c"/>
+      <stop offset="100%" stop-color="#b8941e"/>
+    </linearGradient>
+    <radialGradient id="deco-rayFade" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#f4d47c" stop-opacity="0.7"/>
+      <stop offset="60%" stop-color="#d4af37" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8b6914" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Sunburst of 24 rays (alternating long/short), centered at 200,200 -->
+  <g transform="translate(200 200)" opacity="0.85">
+    <!-- Soft radial glow wash -->
+    <circle r="175" fill="url(#deco-rayFade)"/>
+    <g>
+      <!-- Long rays every 30° (12 rays), short rays offset 15° (12 rays) -->
+      <!-- Each long ray: triangle from center, 170 long, 6 wide -->
+      <g fill="url(#deco-goldV)">
+        <!-- 12 long rays -->
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(0)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(30)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(60)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(90)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(120)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(150)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(180)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(210)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(240)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(270)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(300)"/>
+        <path d="M0,-170 L4,-15 L-4,-15 Z" transform="rotate(330)"/>
+      </g>
+      <g fill="url(#deco-goldV)" opacity="0.75">
+        <!-- 12 short rays at 15° offset -->
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(15)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(45)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(75)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(105)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(135)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(165)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(195)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(225)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(255)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(285)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(315)"/>
+        <path d="M0,-130 L2.5,-15 L-2.5,-15 Z" transform="rotate(345)"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Double concentric rings with notches at cardinal points -->
+  <g transform="translate(200 200)" fill="none">
+    <!-- Outer ring r=180 -->
+    <circle r="180" stroke="url(#deco-goldV)" stroke-width="2"/>
+    <!-- Inner ring r=165 -->
+    <circle r="165" stroke="url(#deco-goldV)" stroke-width="1"/>
+    <!-- Between-rings ornamental notches (N/S/E/W) -->
+    <g stroke="url(#deco-goldV)" stroke-width="1.2">
+      <line x1="0" y1="-180" x2="0" y2="-165"/>
+      <line x1="0" y1="180" x2="0" y2="165"/>
+      <line x1="-180" y1="0" x2="-165" y2="0"/>
+      <line x1="180" y1="0" x2="165" y2="0"/>
+    </g>
+    <!-- Diagonal tiny notches for extra art deco rhythm -->
+    <g stroke="url(#deco-goldV)" stroke-width="0.7" opacity="0.8">
+      <line x1="127.28" y1="-127.28" x2="116.67" y2="-116.67"/>
+      <line x1="-127.28" y1="-127.28" x2="-116.67" y2="-116.67"/>
+      <line x1="127.28" y1="127.28" x2="116.67" y2="116.67"/>
+      <line x1="-127.28" y1="127.28" x2="-116.67" y2="116.67"/>
+    </g>
+  </g>
+
+  <!-- Fleuron diamonds at cardinal points (♦ between rings) -->
+  <g fill="url(#deco-goldBright)" stroke="#8b6914" stroke-width="0.5">
+    <!-- Top -->
+    <path d="M200,168 L206,172.5 L200,177 L194,172.5 Z"/>
+    <circle cx="200" cy="172.5" r="0.9" fill="#8b6914"/>
+    <!-- Bottom -->
+    <path d="M200,223 L206,227.5 L200,232 L194,227.5 Z"/>
+    <circle cx="200" cy="227.5" r="0.9" fill="#8b6914"/>
+    <!-- Left -->
+    <path d="M168,200 L172.5,194 L177,200 L172.5,206 Z"/>
+    <circle cx="172.5" cy="200" r="0.9" fill="#8b6914"/>
+    <!-- Right -->
+    <path d="M223,200 L227.5,194 L232,200 L227.5,206 Z"/>
+    <circle cx="227.5" cy="200" r="0.9" fill="#8b6914"/>
+  </g>
+
+  <!--
+    Interlocking OT monogram. Both letters drawn as DOUBLE-LINE strokes
+    (outer + inner parallel stroke) with ornamental terminal hooks.
+    The O is centered slightly left, the T crosses through its right side.
+  -->
+  <!-- O: double-stroke open circle, with thickness -->
+  <g transform="translate(200 200)">
+    <!-- Outer O body: thick gold ring -->
+    <circle cx="-18" cy="0" r="55" fill="none" stroke="url(#deco-goldBright)" stroke-width="13"/>
+    <!-- Inner outline (double-line effect) -->
+    <circle cx="-18" cy="0" r="55" fill="none" stroke="#6b4d10" stroke-width="1.2" opacity="0.9"/>
+    <circle cx="-18" cy="0" r="49.5" fill="none" stroke="#6b4d10" stroke-width="0.8" opacity="0.8"/>
+    <circle cx="-18" cy="0" r="60.5" fill="none" stroke="#6b4d10" stroke-width="0.8" opacity="0.8"/>
+    <!-- O ornamental terminal hooks (top-left + bottom-right of the O) -->
+    <g fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="0.6">
+      <path d="M-73,-8 Q-82,-4 -78,4 Q-74,8 -68,5 Z"/>
+      <path d="M37,8 Q46,4 42,-4 Q38,-8 32,-5 Z"/>
+    </g>
+
+    <!--
+      T: thick crossbar on top + thick vertical stem, interlocking OVER the O
+      on the right side. Crossbar ornamental flourishes on both ends,
+      stem with double-line and a serif foot.
+    -->
+    <!-- T crossbar -->
+    <rect x="-8" y="-62" width="64" height="15" fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="1"/>
+    <!-- Inner detail line on crossbar -->
+    <rect x="-5" y="-59" width="58" height="9" fill="none" stroke="#6b4d10" stroke-width="0.6" opacity="0.8"/>
+    <!-- Crossbar left terminal hook (flourish) -->
+    <path d="M-8,-62 L-16,-66 L-20,-58 L-12,-52 L-8,-47 Z"
+          fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="0.8"/>
+    <!-- Crossbar right terminal hook -->
+    <path d="M56,-62 L64,-66 L68,-58 L60,-52 L56,-47 Z"
+          fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="0.8"/>
+    <!-- T stem -->
+    <rect x="17" y="-50" width="14" height="104" fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="1"/>
+    <!-- Inner detail line on stem -->
+    <rect x="20" y="-47" width="8" height="98" fill="none" stroke="#6b4d10" stroke-width="0.6" opacity="0.8"/>
+    <!-- T stem serif foot -->
+    <path d="M8,54 L40,54 L36,62 L12,62 Z"
+          fill="url(#deco-goldBright)" stroke="#6b4d10" stroke-width="0.8"/>
+    <rect x="12" y="56" width="24" height="2" fill="#6b4d10" opacity="0.6"/>
+
+    <!-- Central interlocking pin (deco bead where O meets T) -->
+    <circle cx="25" cy="-40" r="2.4" fill="#6b4d10"/>
+  </g>
+
+  <!-- Tiny ornamental corner beads just inside outer ring -->
+  <g fill="url(#deco-goldBright)">
+    <circle cx="200" cy="32" r="1.8"/>
+    <circle cx="200" cy="368" r="1.8"/>
+    <circle cx="32" cy="200" r="1.8"/>
+    <circle cx="368" cy="200" r="1.8"/>
+  </g>
+</svg>
