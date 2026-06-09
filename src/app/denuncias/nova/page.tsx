@@ -1,10 +1,13 @@
 // Relacionamentos — Nova Denuncia (Sprint M8-2)
 // User flow pra denunciar perfil ou mensagem (motivos + descricao + evidencias).
-// W-R-6 ligara mutationCreateReport.
+// WIRE_REAL: dispara a mutation reportProfile no subgraph relacionamentos via
+// gateway federado (/api/graphql). Auth + anti-IDOR sao server-side: o resolver
+// SafetyResolver.reportProfile deriva o reporterId do JWT (user.sub), recusa
+// auto-denuncia, e cria um Report PENDING que notifica Trust & Safety.
+// Zero-mock: sem setTimeout, sem fake-success — o sucesso vem do reportId real.
 
 "use client";
 
-import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -16,6 +19,31 @@ type Reason =
   | "fraud"
   | "inappropriate_content"
   | "other";
+
+// Mapeia o motivo da UI -> enum RelacReportReason do backend (entities:32).
+// inappropriate_content nao tem 1:1 no enum; cai em AGGRESSIVE (conteudo
+// sexual/agressivo nao-solicitado) e o detalhe vai na nota.
+const REASON_TO_ENUM: Record<Reason, string> = {
+  spam: "SPAM",
+  harassment: "HARASSMENT",
+  fake: "FAKE_PHOTO",
+  underage: "UNDERAGE",
+  fraud: "PAYMENT_REQUEST",
+  inappropriate_content: "AGGRESSIVE",
+  other: "OTHER",
+};
+
+const REPORT_PROFILE_MUTATION = /* GraphQL */ `
+  mutation ReportProfile($input: ReportProfileInput!) {
+    reportProfile(input: $input) {
+      ok
+      reportId
+    }
+  }
+`;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ReasonOption = {
   id: Reason;
@@ -99,12 +127,71 @@ function NovaDenunciaContent() {
       setError("Descreva o ocorrido com pelo menos 10 caracteres.");
       return;
     }
+    if (!targetId || !UUID_RE.test(targetId)) {
+      // Anti-mock: sem um alvo valido nao da pra registrar denuncia real.
+      setError(
+        "Nao foi possivel identificar quem voce esta denunciando. Abra a denuncia a partir do perfil ou da conversa.",
+      );
+      return;
+    }
+
     setSubmitting(true);
-    // W-R-6: mutationCreateReport({ targetId, targetType, reason, description, files })
-    setTimeout(() => {
-      setSubmitting(false);
+
+    // O backend (reportProfile) so aceita reportedProfileId + reason + note +
+    // messageId opcional. Nao ha endpoint de upload de evidencia ligado a este
+    // fluxo, entao anexamos os nomes dos arquivos a nota pra nao perder o sinal
+    // (zero-mock: nao fingimos que a imagem foi enviada).
+    const noteParts = [description];
+    if (files.length > 0) {
+      noteParts.push(
+        `Evidencias citadas pelo usuario (nao anexadas): ${files
+          .map((f) => f.name)
+          .join(", ")}`,
+      );
+    }
+
+    const input: Record<string, unknown> = {
+      reportedProfileId: targetId,
+      reason: REASON_TO_ENUM[reason],
+      note: noteParts.join("\n\n"),
+    };
+    // Quando a denuncia parte de uma mensagem e o alvo (target) e o id da
+    // mensagem, repassa como messageId (UUID) pra moderacao localizar o trecho.
+    if (targetType === "message") {
+      input.messageId = targetId;
+    }
+
+    try {
+      const res = await fetch("/api/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          query: REPORT_PROFILE_MUTATION,
+          variables: { input },
+        }),
+      });
+      if (!res.ok && res.status !== 400) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as {
+        data?: { reportProfile: { ok: boolean; reportId: string } | null };
+        errors?: { message: string }[];
+      };
+      if (json.errors && json.errors.length > 0) {
+        throw new Error(json.errors[0]?.message ?? "Erro ao enviar denuncia");
+      }
+      if (!json.data?.reportProfile?.ok) {
+        throw new Error("A denuncia nao foi registrada. Tente novamente.");
+      }
       setSubmitted(true);
-    }, 1000);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Falha ao enviar a denuncia";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {

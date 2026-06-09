@@ -1,12 +1,18 @@
 // Relacionamentos — Buscar (deck swipe Tinder-style)
 // Sprint M8-1: deck card-stack com keyboard navigation (left=pass, right=like, up=super)
 // WIRE_REAL: feed via GraphQL discoverProfiles(filters) no gateway federado.
-// Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
+// WIRE_REAL (swipe): cada swipe persiste no backend —
+//   like/super -> acceptMatch(input:{likedProfileId,type}) -> LikeResult (status
+//                 'matched' quando o reverso ja existe -> dispara aviso de match)
+//   pass       -> rejectMatch(input:{likedProfileId}) (soft-remove, idempotente)
+// Auth + anti-IDOR sao server-side: o resolver deriva o likerId do JWT (user.sub)
+// via resolveProfileIdOrThrow; o client nunca manda o proprio id.
+// Zero-mock: estados loading/ready/empty/error; swipe nao e mais descartado.
 
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SUBVERTICALS } from "@/lib/subverticals";
 
 // Contrato do gateway (introspection DiscoveryFeedResultGql / DiscoveryProfile):
@@ -77,6 +83,74 @@ async function fetchDiscovery(
   return json.data?.discoverProfiles?.profiles ?? [];
 }
 
+const ACCEPT_MATCH_MUTATION = /* GraphQL */ `
+  mutation AcceptMatch($input: LikeProfileInput!) {
+    acceptMatch(input: $input) {
+      status
+      match {
+        id
+      }
+    }
+  }
+`;
+
+const REJECT_MATCH_MUTATION = /* GraphQL */ `
+  mutation RejectMatch($input: LikeProfileInput!) {
+    rejectMatch(input: $input)
+  }
+`;
+
+/**
+ * Persiste o swipe no backend. Retorna se virou match (so para like/super).
+ * Anti-IDOR: o resolver deriva o likerId do JWT; so mandamos o alvo + tipo.
+ */
+async function persistSwipe(
+  profileId: string,
+  action: SwipeAction,
+): Promise<{ matched: boolean }> {
+  if (action === "pass") {
+    const res = await fetch("/api/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        query: REJECT_MATCH_MUTATION,
+        variables: { input: { likedProfileId: profileId } },
+      }),
+    });
+    if (!res.ok && res.status !== 400) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as { errors?: { message: string }[] };
+    if (json.errors && json.errors.length > 0) {
+      throw new Error(json.errors[0]?.message ?? "GraphQL error");
+    }
+    return { matched: false };
+  }
+
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      query: ACCEPT_MATCH_MUTATION,
+      variables: {
+        input: {
+          likedProfileId: profileId,
+          type: action === "super" ? "SUPER_LIKE" : "LIKE",
+        },
+      },
+    }),
+  });
+  if (!res.ok && res.status !== 400) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    data?: { acceptMatch: { status: string } | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  return { matched: json.data?.acceptMatch?.status === "matched" };
+}
+
 export default function BuscarPage() {
   const [activeVertical, setActiveVertical] = useState<string>("all");
   const [cursor, setCursor] = useState(0);
@@ -88,6 +162,8 @@ export default function BuscarPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [deck, setDeck] = useState<DiscoveryProfile[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [matchToast, setMatchToast] = useState<string | null>(null);
+  const [swipeError, setSwipeError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,9 +203,24 @@ export default function BuscarPage() {
     (action: SwipeAction) => {
       const c = deck[cursor];
       if (!c) return;
+      // Avanca o card de imediato (UX), mas persiste o swipe no backend.
       setHistory((h) => [...h, { id: c.id, action }]);
       setCursor((idx) => idx + 1);
       setDragX(0);
+      setSwipeError(null);
+      void persistSwipe(c.id, action)
+        .then(({ matched }) => {
+          if (matched) {
+            setMatchToast(c.displayName ?? "Voce tem um novo match!");
+          }
+        })
+        .catch((err: unknown) => {
+          setSwipeError(
+            err instanceof Error
+              ? `Nao foi possivel registrar o ultimo swipe: ${err.message}`
+              : "Nao foi possivel registrar o ultimo swipe.",
+          );
+        });
     },
     [deck, cursor],
   );
@@ -169,6 +260,40 @@ export default function BuscarPage() {
           </Link>
         </div>
       </header>
+
+      {/* Aviso de match real (acceptMatch retornou status 'matched') */}
+      {matchToast && (
+        <div
+          className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-fuchsia-500/50 bg-fuchsia-600/10 px-4 py-3"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
+            🎉 Deu match com {matchToast}! Veja em{" "}
+            <Link href="/matches" className="underline">
+              Matches
+            </Link>
+            .
+          </p>
+          <button
+            onClick={() => setMatchToast(null)}
+            aria-label="Fechar aviso"
+            className="text-fuchsia-700 dark:text-fuchsia-300 hover:opacity-70"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Erro ao persistir o ultimo swipe (nao bloqueia o deck) */}
+      {swipeError && (
+        <div
+          className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300"
+          role="alert"
+        >
+          {swipeError}
+        </div>
+      )}
 
       {/* Filtros por vertical */}
       <div className="flex gap-2 overflow-x-auto pb-3 mb-6 border-b border-border">
