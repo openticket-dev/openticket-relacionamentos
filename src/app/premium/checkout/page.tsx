@@ -1,62 +1,149 @@
-// Relacionamentos — Premium Checkout (Sprint M8-2)
-// Checkout via Asaas Marketplace. PIX + Cartao + Boleto.
-// W-R-7 ligara mutationCreateAsaasCheckout.
+// Relacionamentos — Premium Checkout
+// Wireado ao backend real (apps/core/src/dating-billing) via /api/graphql.
+//   - startPremiumCheckout → assinatura Premium (R$ 39,90/mês)
+//   - buyBoostCheckout     → boost de perfil (R$ 9,90 · 24h, via ?type=boost)
+//
+// GUARDRAIL DE DINHEIRO (mesmo do fluxo /perfil/premium do shell): a cobrança
+// REAL passa pelo Asaas SANDBOX atrás do gate de produção DATING_BILLING_LIVE
+// (default FECHADO). O resultado traz `billingMode` (PRODUCTION | SANDBOX |
+// UNCONFIGURED) e a UI mostra o estado HONESTO. NÃO existe paywall fake: nada
+// vira Premium sem cobrança real, e sem chave o backend devolve UNCONFIGURED.
+//
+// As mutations são user-scoped (sem args): o backend resolve o profile pela
+// sessão. Por isso não há seletor de e-mail / método de pagamento aqui — o
+// método (PIX/cartão/boleto) é coletado no checkout hospedado do Asaas, cujo
+// link (`invoiceUrl`) é devolvido pelo backend.
 
 "use client";
 
 import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { gqlRequest, GqlClientError } from "@/lib/gql-client";
 
-type PaymentMethod = "pix" | "credit_card" | "boleto";
+type CheckoutType = "premium" | "boost";
 
-type PlanSummary = {
-  name: string;
-  price: number;
-  period: string;
+type DatingCheckoutResult = {
+  created: boolean;
+  billingMode: "PRODUCTION" | "SANDBOX" | "UNCONFIGURED" | string;
+  message: string;
+  asaasId: string | null;
+  invoiceUrl: string | null;
 };
 
-const PLAN_PRICES: Record<string, Record<string, PlanSummary>> = {
-  gold: {
-    monthly: { name: "Gold Mensal", price: 29.9, period: "mes" },
-    annual: { name: "Gold Anual", price: 239.0, period: "ano" },
-  },
-  platinum: {
-    monthly: { name: "Platinum Mensal", price: 59.9, period: "mes" },
-    annual: { name: "Platinum Anual", price: 479.0, period: "ano" },
-  },
+type StartPremiumResult = { startPremiumCheckout: DatingCheckoutResult };
+type BuyBoostResult = { buyBoostCheckout: DatingCheckoutResult };
+
+const START_PREMIUM_CHECKOUT = /* GraphQL */ `
+  mutation StartPremiumCheckout {
+    startPremiumCheckout {
+      created
+      billingMode
+      message
+      asaasId
+      invoiceUrl
+      subscription { id plan status isPremium expiresAt }
+    }
+  }
+`;
+
+const BUY_BOOST_CHECKOUT = /* GraphQL */ `
+  mutation BuyBoostCheckout {
+    buyBoostCheckout {
+      created
+      billingMode
+      message
+      asaasId
+      invoiceUrl
+      boost { id status isActive startedAt expiresAt }
+    }
+  }
+`;
+
+const PRODUCT: Record<
+  CheckoutType,
+  { name: string; price: number; period: string; cta: string }
+> = {
+  // Preços travados no backend (PREMIUM_PRICE_BRL / BOOST_PRICE_BRL).
+  premium: { name: "Premium", price: 39.9, period: "mês", cta: "Assinar Premium" },
+  boost: { name: "Boost de perfil", price: 9.9, period: "24h", cta: "Turbinar perfil" },
 };
+
+function brl(v: number): string {
+  return `R$ ${v.toFixed(2).replace(".", ",")}`;
+}
+
+/** Banner honesto do estado de billing devolvido pelo backend. */
+function BillingStateNote({ result }: { result: DatingCheckoutResult }) {
+  const isSandbox = result.billingMode === "SANDBOX";
+  const isUnconfigured = result.billingMode === "UNCONFIGURED";
+
+  const tone = result.created
+    ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 dark:border-fuchsia-900/40 dark:bg-fuchsia-950/20 dark:text-fuchsia-200"
+    : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200";
+
+  return (
+    <div role="status" className={`mt-4 rounded-lg border px-4 py-3 text-sm ${tone}`}>
+      {isSandbox && (
+        <p className="font-semibold">Modo teste (sandbox) — sem dinheiro real</p>
+      )}
+      {isUnconfigured && (
+        <p className="font-semibold">Pagamento ainda não configurado</p>
+      )}
+      <p className="opacity-90">{result.message}</p>
+      {result.invoiceUrl && (
+        <a
+          href={result.invoiceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block font-medium underline hover:opacity-80"
+        >
+          {isSandbox ? "Abrir cobrança de teste (Asaas sandbox)" : "Abrir pagamento (Asaas)"}
+        </a>
+      )}
+    </div>
+  );
+}
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
-  const planId = searchParams.get("plan") || "gold";
-  const billing = searchParams.get("billing") || "monthly";
-  const plan = PLAN_PRICES[planId]?.[billing] ?? PLAN_PRICES.gold.monthly;
+  // Aceita ?type=boost; default premium. (O link legado ?plan=gold/platinum
+  // cai em premium — o backend só tem um plano Premium único.)
+  const type: CheckoutType =
+    searchParams.get("type") === "boost" ? "boost" : "premium";
+  const product = PRODUCT[type];
 
-  const [method, setMethod] = useState<PaymentMethod>("pix");
-  const [email, setEmail] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<DatingCheckoutResult | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setResult(null);
     if (!acceptedTerms) {
       setError("Voce precisa aceitar os termos pra continuar.");
       return;
     }
-    if (!email.includes("@")) {
-      setError("Email invalido.");
-      return;
-    }
     setSubmitting(true);
-    // W-R-7: mutationCreateAsaasCheckout({ planId, billing, method, email })
-    // → redireciona pra Asaas hosted checkout
-    setTimeout(() => {
+    try {
+      if (type === "boost") {
+        const data = await gqlRequest<BuyBoostResult>(BUY_BOOST_CHECKOUT);
+        setResult(data.buyBoostCheckout);
+      } else {
+        const data = await gqlRequest<StartPremiumResult>(START_PREMIUM_CHECKOUT);
+        setResult(data.startPremiumCheckout);
+      }
+    } catch (err) {
+      if (err instanceof GqlClientError) {
+        setError(err.message);
+      } else {
+        setError("Nao foi possivel iniciar o checkout. Tente novamente.");
+      }
+    } finally {
       setSubmitting(false);
-      setError("Checkout Asaas ainda nao conectado. Aguardando W-R-7.");
-    }, 1200);
+    }
   };
 
   return (
@@ -74,64 +161,13 @@ function CheckoutContent() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
           <section>
-            <h2 className="font-semibold mb-3">1. Seu email</h2>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-              className="w-full px-4 py-2 border border-border rounded-lg bg-background"
-            />
-          </section>
-
-          <section>
-            <h2 className="font-semibold mb-3">2. Forma de pagamento</h2>
-            <div className="space-y-2">
-              {(
-                [
-                  { id: "pix", label: "PIX", desc: "Aprovacao imediata", icon: "⚡" },
-                  {
-                    id: "credit_card",
-                    label: "Cartao de credito",
-                    desc: "Visa, Master, Elo, Hiper, Amex",
-                    icon: "💳",
-                  },
-                  {
-                    id: "boleto",
-                    label: "Boleto bancario",
-                    desc: "Compensacao em 1-3 dias uteis",
-                    icon: "🧾",
-                  },
-                ] as const
-              ).map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
-                    method === m.id
-                      ? "border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/20"
-                      : "border-border hover:border-muted-foreground/50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="method"
-                    value={m.id}
-                    checked={method === m.id}
-                    onChange={() => setMethod(m.id as PaymentMethod)}
-                    className="sr-only"
-                  />
-                  <span className="text-2xl">{m.icon}</span>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">{m.label}</p>
-                    <p className="text-xs text-muted-foreground">{m.desc}</p>
-                  </div>
-                  {method === m.id && (
-                    <span className="text-fuchsia-600 font-bold">✓</span>
-                  )}
-                </label>
-              ))}
-            </div>
+            <h2 className="font-semibold mb-2">Pagamento via Asaas</h2>
+            <p className="text-sm text-muted-foreground">
+              Ao confirmar, geramos uma cobrança no Asaas e abrimos o checkout
+              seguro onde você escolhe a forma de pagamento (PIX, cartão de
+              crédito ou boleto). Você só vira {product.name} depois do pagamento
+              ser confirmado — nada é ativado antes disso.
+            </p>
           </section>
 
           <section>
@@ -167,6 +203,8 @@ function CheckoutContent() {
               {error}
             </div>
           )}
+
+          {result && <BillingStateNote result={result} />}
         </div>
 
         <aside className="space-y-4">
@@ -174,21 +212,19 @@ function CheckoutContent() {
             <h3 className="font-semibold mb-3">Resumo</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Plano</span>
-                <span className="font-medium">{plan.name}</span>
+                <span className="text-muted-foreground">Produto</span>
+                <span className="font-medium">{product.name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>R$ {plan.price.toFixed(2).replace(".", ",")}</span>
+                <span>{brl(product.price)}</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-bold">
                 <span>Total</span>
-                <span className="text-fuchsia-600">
-                  R$ {plan.price.toFixed(2).replace(".", ",")}
-                </span>
+                <span className="text-fuchsia-600">{brl(product.price)}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1">
-                Cobrado a cada {plan.period}.
+                Cobrado a cada {product.period}.
               </p>
             </div>
 
@@ -197,7 +233,7 @@ function CheckoutContent() {
               disabled={submitting}
               className="w-full mt-4 py-2.5 rounded-full bg-fuchsia-600 text-white font-semibold hover:bg-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Processando..." : "Confirmar e pagar"}
+              {submitting ? "Processando..." : product.cta}
             </button>
 
             <p className="text-xs text-center text-muted-foreground mt-3">
