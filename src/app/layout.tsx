@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { OnboardingGate } from "@/components/OnboardingGate";
 import { RelacionamentosApolloProvider } from "@/lib/apollo/Provider";
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="min-h-screen bg-background text-foreground antialiased">
         <RelacionamentosApolloProvider>
+          <OnboardingGate />
           <AppShell>{children}</AppShell>
         </RelacionamentosApolloProvider>
       </body>
