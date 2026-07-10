@@ -35,10 +35,14 @@ function synthesizeJwt(payload: Record<string, unknown>): string {
       exp: Math.floor(Date.now() / 1000) + 3600,
     }),
   );
-  const secret =
-    process.env.JWT_SECRET ||
-    process.env.SUPABASE_JWT_SECRET ||
-    "dev_secret_change_me";
+  // SEC-01/SEC-05: fail closed instead of signing with a public fallback secret
+  // (a shared well-known secret makes the backend accept forged tokens).
+  const secret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "JWT_SECRET/SUPABASE_JWT_SECRET is not configured — refusing to synthesize an auth token (fail-closed).",
+    );
+  }
   const signature = base64url(
     createHmac("sha256", secret).update(`${header}.${body}`).digest(),
   );
