@@ -1,0 +1,38 @@
+name: TS Strict Check
+
+on:
+  pull_request:
+    branches: [staging, main]
+    paths:
+      - "src/**"
+      - "tsconfig.json"
+      - "tsconfig*.json"
+  push:
+    branches: [staging]
+    paths:
+      - "src/**"
+      - "tsconfig.json"
+
+jobs:
+  typecheck:
+    name: tsc --noEmit (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # REL-02 rollout: gate de ts-strict (o repo usa npm). npm ci --legacy-peer-deps
+      - name: Install deps
+        run: npm ci --legacy-peer-deps
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Type check (gradual strict)
+        run: npx tsc --noEmit
