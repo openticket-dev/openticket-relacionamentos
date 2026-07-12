@@ -1,10 +1,26 @@
-// Relacionamentos — Premium Beneficios (Sprint M8-2)
+// Relacionamentos — Premium Beneficios
 // Detalhamento dos beneficios por tier (boost, super-likes, ver curtidas, modo incognito).
-// W-R-7 ligara queryUserSubscription pra mostrar o que o user tem ativo.
+//
+// WIRE (feat/relacion-verificar-premium): o "Seu plano atual" agora vem do
+// backend REAL via `mySubscription` (SubscriptionResolver, apps/relacionamentos
+// /src/resolvers/subscription.resolver.ts). Zero hardcode: o tier destacado
+// reflete a assinatura B2C do usuario logado, lida pelo gateway federado.
+//
+// MAPEAMENTO HONESTO free/gold/platinum ↔ backend: o backend expoe UM unico
+// plano pago (RelacSubscriptionTier: FREE | PREMIUM — ver
+// entities/relacionamentos.entities.ts:16). A tabela abaixo tem 3 colunas de
+// marketing. `normalizeTier` mapeia o tier REAL pra coluna destacada:
+//   FREE     → coluna Free
+//   PREMIUM  → coluna Platinum (plano pago unico = pacote completo de recursos)
+//   GOLD/PLATINUM (se o backend um dia separar) → coluna correspondente
+// O nome exibido no header ("Seu plano atual") usa o valor REAL do backend, nao
+// a coluna mapeada — nada inventado.
 
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { gqlRequest, GqlClientError } from "@/lib/gql-client";
 
 type Tier = "free" | "gold" | "platinum";
 
@@ -17,6 +33,41 @@ type Benefit = {
   goldValue: string;
   platinumValue: string;
 };
+
+// Espelha SubscriptionStatus do subgraph relacionamentos
+// (tier: RelacSubscriptionTier FREE|PREMIUM; active: Boolean).
+type MySubscription = {
+  tier: string;
+  active: boolean;
+  currentPeriodEnd?: string | null;
+};
+
+const MY_SUBSCRIPTION = /* GraphQL */ `
+  query MySubscription {
+    mySubscription {
+      tier
+      active
+      currentPeriodEnd
+    }
+  }
+`;
+
+/** Mapeia o tier REAL do backend pra coluna de destaque da tabela. */
+function normalizeTier(raw: string | null | undefined): Tier {
+  const t = (raw ?? "").toUpperCase();
+  if (t === "PLATINUM" || t === "PREMIUM") return "platinum";
+  if (t === "GOLD") return "gold";
+  return "free";
+}
+
+/** Nome honesto do plano pra exibir no header (valor real do backend). */
+function displayTierName(raw: string | null | undefined): string {
+  const t = (raw ?? "").toUpperCase();
+  if (!t || t === "FREE") return "Free";
+  if (t === "PREMIUM") return "Premium";
+  // Qualquer outro valor futuro: capitaliza o que o backend mandou.
+  return t.charAt(0) + t.slice(1).toLowerCase();
+}
 
 const BENEFITS: Benefit[] = [
   {
@@ -94,8 +145,37 @@ const BENEFITS: Benefit[] = [
 ];
 
 export default function BeneficiosPage() {
-  // W-R-7: substituir por queryUserSubscription()
-  const currentTier = "free" as Tier;
+  const [sub, setSub] = useState<MySubscription | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await gqlRequest<{ mySubscription: MySubscription | null }>(
+          MY_SUBSCRIPTION,
+        );
+        if (alive) setSub(data.mySubscription);
+      } catch (e) {
+        if (alive)
+          setError(
+            e instanceof GqlClientError
+              ? e.message
+              : "Nao foi possivel carregar seu plano.",
+          );
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Coluna destacada: so destaca quando temos o tier real. Enquanto carrega ou
+  // em erro, nao destaca nenhuma (evita mentir "free" sem ter lido o backend).
+  const currentTier: Tier | null = sub ? normalizeTier(sub.tier) : null;
 
   return (
     <main className="min-h-screen p-6 max-w-5xl mx-auto">
@@ -108,8 +188,19 @@ export default function BeneficiosPage() {
         </Link>
         <h1 className="text-2xl font-semibold mt-2">Beneficios detalhados</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          O que cada plano inclui. Seu plano atual:{" "}
-          <span className="font-semibold capitalize">{currentTier}</span>
+          O que cada plano inclui.{" "}
+          {loading ? (
+            <span>Carregando seu plano...</span>
+          ) : error ? (
+            <span className="text-amber-600 dark:text-amber-400">
+              Nao consegui carregar seu plano agora.
+            </span>
+          ) : (
+            <>
+              Seu plano atual:{" "}
+              <span className="font-semibold">{displayTierName(sub?.tier)}</span>
+            </>
+          )}
         </p>
       </header>
 
