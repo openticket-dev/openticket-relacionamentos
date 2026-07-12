@@ -13,8 +13,9 @@
  * honesto com CTA para /empresas (zero mock).
  *
  * O QR gerado encoda vertical + companyId -> URL real escopada da empresa
- * (perfil, evento de encontro, assinatura, etc.). Persistencia: localStorage
- * por (vertical:companyId). Backend BusinessQrConfig = NOT_IMPLEMENTED.
+ * (perfil, evento de encontro, assinatura, etc.). Persistencia: backend real
+ * (businessQrConfig / saveBusinessQrConfig no subgraph eventos, anti-IDOR via
+ * JWT), com localStorage so como cache/fallback offline. Ver QrDesigner.tsx.
  */
 
 import React from "react";
