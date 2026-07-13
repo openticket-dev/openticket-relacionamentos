@@ -1,10 +1,13 @@
-// Relacionamentos — Premium Beneficios (Sprint M8-2)
+// Relacionamentos — Premium Beneficios (D5 tiers B2C)
 // Detalhamento dos beneficios por tier (boost, super-likes, ver curtidas, modo incognito).
-// W-R-7 ligara queryUserSubscription pra mostrar o que o user tem ativo.
+// Tier atual vem de myDatingEntitlements (par do backend openticket-api PR#661);
+// degrade honesto → Free enquanto o BE D5 não estiver no ar / sem sessão.
 
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { loadMyEntitlements } from "@/lib/dating-billing-client";
 
 type Tier = "free" | "gold" | "platinum";
 
@@ -94,8 +97,25 @@ const BENEFITS: Benefit[] = [
 ];
 
 export default function BeneficiosPage() {
-  // W-R-7: substituir por queryUserSubscription()
-  const currentTier = "free" as Tier;
+  // Tier ativo real (myDatingEntitlements). Fail-closed → "free".
+  const [currentTier, setCurrentTier] = useState<Tier>("free");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ent = await loadMyEntitlements();
+      if (!alive) return;
+      const plan = ent.data.plan?.toLowerCase();
+      if (plan === "gold" || plan === "platinum") {
+        setCurrentTier(plan);
+      } else {
+        setCurrentTier("free");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <main className="min-h-screen p-6 max-w-5xl mx-auto">
