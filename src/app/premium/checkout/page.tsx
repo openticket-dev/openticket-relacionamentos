@@ -1,76 +1,47 @@
-// Relacionamentos — Premium Checkout
-// Wireado ao backend real (apps/core/src/dating-billing) via /api/graphql.
-//   - startPremiumCheckout → assinatura Premium (R$ 39,90/mês)
-//   - buyBoostCheckout     → boost de perfil (R$ 9,90 · 24h, via ?type=boost)
+// Relacionamentos — Premium Checkout (D5 tiers B2C)
+// Par FE do backend openticket-api PR#661. Wireado ao backend real
+// (apps/core/src/dating-billing) via /api/graphql.
+//   - startPremiumCheckout(plan: DatingPlanTier) → assinatura GOLD/PLATINUM
+//   - buyBoostCheckout                           → boost de perfil (24h, avulso)
 //
-// GUARDRAIL DE DINHEIRO (mesmo do fluxo /perfil/premium do shell): a cobrança
-// REAL passa pelo Asaas SANDBOX atrás do gate de produção DATING_BILLING_LIVE
-// (default FECHADO). O resultado traz `billingMode` (PRODUCTION | SANDBOX |
-// UNCONFIGURED) e a UI mostra o estado HONESTO. NÃO existe paywall fake: nada
-// vira Premium sem cobrança real, e sem chave o backend devolve UNCONFIGURED.
+// PREÇO: vem de datingPlansCatalog (fonte única, mata o hardcode de R$). Sem o
+// BE D5 no ar, cai na tabela canônica (degrade honesto — cultura#68).
 //
-// As mutations são user-scoped (sem args): o backend resolve o profile pela
-// sessão. Por isso não há seletor de e-mail / método de pagamento aqui — o
-// método (PIX/cartão/boleto) é coletado no checkout hospedado do Asaas, cujo
-// link (`invoiceUrl`) é devolvido pelo backend.
+// GUARDRAIL DE DINHEIRO: a cobrança REAL passa pelo Asaas SANDBOX atrás do gate
+// de produção DATING_BILLING_LIVE (default FECHADO). O resultado traz
+// `billingMode` (PRODUCTION | SANDBOX | UNCONFIGURED) e a UI mostra o estado
+// HONESTO. NÃO existe paywall fake: nada vira Premium sem cobrança confirmada, e
+// sem chave o backend devolve UNCONFIGURED.
+//
+// As mutations são user-scoped (owner do JWT): o método (PIX/cartão/boleto) é
+// coletado no checkout hospedado do Asaas, cujo `invoiceUrl` volta no resultado.
 
 "use client";
 
 import Link from "next/link";
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { gqlRequest, GqlClientError } from "@/lib/gql-client";
+import { GqlClientError } from "@/lib/gql-client";
+import {
+  buyBoostCheckout,
+  loadPlansCatalog,
+  startPremiumCheckout,
+} from "@/lib/dating-billing-client";
+import {
+  FALLBACK_PLANS_CATALOG,
+  formatBRL,
+  planKindToTier,
+  type DatingCheckoutResult,
+  type DatingPlanCatalogItem,
+} from "@/lib/dating-plans";
 
-type CheckoutType = "premium" | "boost";
+type PlanParam = "gold" | "platinum" | "boost";
 
-type DatingCheckoutResult = {
-  created: boolean;
-  billingMode: "PRODUCTION" | "SANDBOX" | "UNCONFIGURED" | string;
-  message: string;
-  asaasId: string | null;
-  invoiceUrl: string | null;
-};
-
-type StartPremiumResult = { startPremiumCheckout: DatingCheckoutResult };
-type BuyBoostResult = { buyBoostCheckout: DatingCheckoutResult };
-
-const START_PREMIUM_CHECKOUT = /* GraphQL */ `
-  mutation StartPremiumCheckout {
-    startPremiumCheckout {
-      created
-      billingMode
-      message
-      asaasId
-      invoiceUrl
-      subscription { id plan status isPremium expiresAt }
-    }
-  }
-`;
-
-const BUY_BOOST_CHECKOUT = /* GraphQL */ `
-  mutation BuyBoostCheckout {
-    buyBoostCheckout {
-      created
-      billingMode
-      message
-      asaasId
-      invoiceUrl
-      boost { id status isActive startedAt expiresAt }
-    }
-  }
-`;
-
-const PRODUCT: Record<
-  CheckoutType,
-  { name: string; price: number; period: string; cta: string }
-> = {
-  // Preços travados no backend (PREMIUM_PRICE_BRL / BOOST_PRICE_BRL).
-  premium: { name: "Premium", price: 39.9, period: "mês", cta: "Assinar Premium" },
-  boost: { name: "Boost de perfil", price: 9.9, period: "24h", cta: "Turbinar perfil" },
-};
-
-function brl(v: number): string {
-  return `R$ ${v.toFixed(2).replace(".", ",")}`;
+/** slug da URL → plan do catálogo (GOLD/PLATINUM/BOOST). */
+function planParamToCatalogPlan(p: PlanParam): string {
+  if (p === "boost") return "BOOST";
+  if (p === "platinum") return "PLATINUM";
+  return "GOLD";
 }
 
 /** Banner honesto do estado de billing devolvido pelo backend. */
@@ -107,16 +78,49 @@ function BillingStateNote({ result }: { result: DatingCheckoutResult }) {
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
-  // Aceita ?type=boost; default premium. (O link legado ?plan=gold/platinum
-  // cai em premium — o backend só tem um plano Premium único.)
-  const type: CheckoutType =
-    searchParams.get("type") === "boost" ? "boost" : "premium";
-  const product = PRODUCT[type];
+  // Aceita ?plan=gold|platinum|boost. Legado: ?type=boost.
+  const rawPlan = (searchParams.get("plan") || "").toLowerCase();
+  const legacyBoost = searchParams.get("type") === "boost";
+  const planParam: PlanParam =
+    rawPlan === "boost" || legacyBoost
+      ? "boost"
+      : rawPlan === "platinum"
+        ? "platinum"
+        : "gold";
+
+  const isBoost = planParam === "boost";
+  const catalogPlan = planParamToCatalogPlan(planParam);
+
+  // Preço/label vêm do catálogo (fonte única). Fallback canônico enquanto carrega
+  // ou se o BE D5 não estiver no ar.
+  const [catalog, setCatalog] = useState<DatingPlanCatalogItem[]>(
+    FALLBACK_PLANS_CATALOG,
+  );
+  const [priceDegraded, setPriceDegraded] = useState(false);
 
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DatingCheckoutResult | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const cat = await loadPlansCatalog();
+      if (!alive) return;
+      setCatalog(cat.data);
+      setPriceDegraded(cat.degraded);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const item =
+    catalog.find((c) => c.plan === catalogPlan) ??
+    FALLBACK_PLANS_CATALOG.find((c) => c.plan === catalogPlan)!;
+  const period = item.cycle === "ONE_OFF" ? "24h" : "mês";
+  const cta = isBoost ? "Turbinar perfil" : `Assinar ${item.label}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,15 +132,19 @@ function CheckoutContent() {
     }
     setSubmitting(true);
     try {
-      if (type === "boost") {
-        const data = await gqlRequest<BuyBoostResult>(BUY_BOOST_CHECKOUT);
-        setResult(data.buyBoostCheckout);
+      if (isBoost) {
+        setResult(await buyBoostCheckout());
       } else {
-        const data = await gqlRequest<StartPremiumResult>(START_PREMIUM_CHECKOUT);
-        setResult(data.startPremiumCheckout);
+        const tier = planKindToTier(catalogPlan);
+        if (!tier) {
+          throw new Error("Plano invalido pra checkout de assinatura.");
+        }
+        setResult(await startPremiumCheckout(tier));
       }
     } catch (err) {
       if (err instanceof GqlClientError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
         setError(err.message);
       } else {
         setError("Nao foi possivel iniciar o checkout. Tente novamente.");
@@ -155,7 +163,9 @@ function CheckoutContent() {
         >
           ← Planos
         </Link>
-        <h1 className="text-2xl font-semibold mt-2">Finalizar Assinatura</h1>
+        <h1 className="text-2xl font-semibold mt-2">
+          {isBoost ? "Comprar Boost" : "Finalizar Assinatura"}
+        </h1>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -165,7 +175,7 @@ function CheckoutContent() {
             <p className="text-sm text-muted-foreground">
               Ao confirmar, geramos uma cobrança no Asaas e abrimos o checkout
               seguro onde você escolhe a forma de pagamento (PIX, cartão de
-              crédito ou boleto). Você só vira {product.name} depois do pagamento
+              crédito ou boleto). Você só vira {item.label} depois do pagamento
               ser confirmado — nada é ativado antes disso.
             </p>
           </section>
@@ -212,20 +222,32 @@ function CheckoutContent() {
             <h3 className="font-semibold mb-3">Resumo</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Produto</span>
-                <span className="font-medium">{product.name}</span>
+                <span className="text-muted-foreground">
+                  {isBoost ? "Produto" : "Plano"}
+                </span>
+                <span className="font-medium">{item.label}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>{brl(product.price)}</span>
+                <span>{formatBRL(item.priceBRL)}</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-bold">
                 <span>Total</span>
-                <span className="text-fuchsia-600">{brl(product.price)}</span>
+                <span className="text-fuchsia-600">
+                  {formatBRL(item.priceBRL)}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground pt-1">
-                Cobrado a cada {product.period}.
+                {isBoost
+                  ? "Compra avulsa · perfil em destaque por 24h."
+                  : `Cobrado a cada ${period}.`}
               </p>
+              {priceDegraded && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 pt-1">
+                  Preço da tabela oficial — cobrança ao vivo conecta com o
+                  backend D5.
+                </p>
+              )}
             </div>
 
             <button
@@ -233,7 +255,7 @@ function CheckoutContent() {
               disabled={submitting}
               className="w-full mt-4 py-2.5 rounded-full bg-fuchsia-600 text-white font-semibold hover:bg-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Processando..." : product.cta}
+              {submitting ? "Processando..." : cta}
             </button>
 
             <p className="text-xs text-center text-muted-foreground mt-3">

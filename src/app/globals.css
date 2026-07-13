@@ -1,37 +1,13 @@
 @import "tailwindcss";
 
+/* OpenTicket brand design tokens — single source of truth (dark/cosmic default).
+   theme.css owns the full shadcn token set (--background #07060d, --card #13101f,
+   --primary #a855f7, --border #2a2342, --foreground #ece9f5, status/brand accents)
+   + the @theme inline map + body bg/text/font. Replaces the partial, off-brand
+   magenta (#d946ef) tokens this vertical used to redeclare by hand. */
+@import "@openticket-dev/ui/theme.css";
+
 /* Scan @openticket-dev/ui (FooterBase, etc) so utility classes inside the shared
    package are picked up by Tailwind v4. Without this, classes like lg:grid-cols-12,
    lg:col-span-3 get purged and the footer collapses to mobile layout. */
 @source "../../node_modules/@openticket-dev/ui/dist/**/*.js";
-
-/* Brand: magenta #d946ef (fuchsia-500) — relacionamentos vertical */
-:root {
-  --background: 292 30% 99%;
-  --foreground: 292 30% 11%;
-  --primary: 292 84% 61%; /* #d946ef */
-  --primary-foreground: 0 0% 100%;
-  --muted: 292 20% 95%;
-  --muted-foreground: 292 10% 40%;
-  --accent: 292 40% 92%;
-  --border: 292 15% 88%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 292 20% 8%;
-    --foreground: 292 10% 96%;
-    --primary: 292 84% 65%;
-    --primary-foreground: 0 0% 100%;
-    --muted: 292 15% 15%;
-    --muted-foreground: 292 10% 65%;
-    --accent: 292 20% 18%;
-    --border: 292 15% 22%;
-  }
-}
-
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-}
