@@ -3,6 +3,12 @@
 // de interesse real disponivel no gateway. Free user ve blur+count, premium ve cards.
 // Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
 //
+// D5 (par do backend openticket-api PR#661): o gate premium agora é REAL —
+// `myDatingEntitlements.seeWhoLiked` decide se destrava as identidades (antes
+// era um toggle "Simular premium" fake). Fail-closed: sem confirmar o tier, fica
+// bloqueado (nunca finge premium). O backend TAMBÉM redige server-side
+// (viewerId/displayName/avatar) pra free — este gate é a camada visual.
+//
 // NOTA de contrato: o gateway nao expoe `receivedLikes` (so `myLikes`, que sao
 // os likes que VOCE enviou, sem displayName/avatar). `myProfileViewers` e a
 // unica query com dado enriquecido (displayName + avatar + viewedAt) sobre quem
@@ -12,6 +18,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { loadMyEntitlements } from "@/lib/dating-billing-client";
 
 // Contrato (introspection): myProfileViewers(input: MyProfileViewersInput): [ProfileViewer!]!
 //   ProfileViewer { id viewerId displayName avatar viewedAt source }
@@ -74,13 +81,27 @@ function formatWhen(iso: string): string {
 }
 
 export default function LikesPage() {
-  // Tier real (subscription) liga em W-R-7. Toggle local apenas demonstra o gate
-  // visual — o DADO listado abaixo e sempre real (myProfileViewers).
-  const [isPremium, setIsPremium] = useState(false);
+  // Gate REAL: myDatingEntitlements.seeWhoLiked (GOLD/PLATINUM ativos). Fail-closed
+  // → false enquanto não confirma (degradado / sem sessão / BE D5 offline).
+  const [canSeeWhoLiked, setCanSeeWhoLiked] = useState(false);
+  const [tierUnknown, setTierUnknown] = useState(false);
 
   const [state, setState] = useState<LoadState>("loading");
   const [viewers, setViewers] = useState<ProfileViewer[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ent = await loadMyEntitlements();
+      if (cancelled) return;
+      setCanSeeWhoLiked(ent.data.seeWhoLiked);
+      setTierUnknown(ent.degraded);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,17 +150,13 @@ export default function LikesPage() {
         </Link>
       </header>
 
-      {/* Preview toggle do gate premium — tier real liga em W-R-7 (subscription) */}
-      <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300">
-        <strong>Preview:</strong> a checagem de tier liga em W-R-7 (subscription).
-        Toggle abaixo simula o estado — a lista carregada e sempre real.{" "}
-        <button
-          onClick={() => setIsPremium((v) => !v)}
-          className="ml-2 underline font-medium"
-        >
-          {isPremium ? "Voltar pra free" : "Simular premium"}
-        </button>
-      </div>
+      {/* Degrade honesto: só aparece se não deu pra confirmar o tier ao vivo. */}
+      {tierUnknown && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300">
+          Nao consegui confirmar seu plano agora — a lista fica bloqueada por
+          seguranca (fail-closed) ate a checagem de tier conectar.
+        </div>
+      )}
 
       {/* Loading */}
       {state === "loading" && (
@@ -197,7 +214,7 @@ export default function LikesPage() {
               key={v.id}
               className="border border-border rounded-2xl p-5 relative overflow-hidden"
             >
-              {!isPremium && (
+              {!canSeeWhoLiked && (
                 <div
                   aria-hidden
                   className="absolute inset-0 backdrop-blur-md bg-background/30 z-10 flex items-center justify-center"
@@ -208,12 +225,12 @@ export default function LikesPage() {
               <div className="flex items-start justify-between mb-2">
                 <div>
                   <h3 className="font-semibold">
-                    {isPremium
+                    {canSeeWhoLiked
                       ? (v.displayName ?? "Perfil")
                       : "Perfil oculto"}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {isPremium && v.source ? v.source : "—"}
+                    {canSeeWhoLiked && v.source ? v.source : "—"}
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground">
@@ -221,7 +238,7 @@ export default function LikesPage() {
                 </span>
               </div>
               <div className="h-32 rounded-xl bg-gradient-to-br from-fuchsia-200 via-rose-200 to-amber-200 dark:from-fuchsia-900/40 dark:via-rose-900/40 dark:to-amber-900/40 mb-3 flex items-center justify-center overflow-hidden">
-                {isPremium && v.avatar ? (
+                {canSeeWhoLiked && v.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={v.avatar}
@@ -232,7 +249,7 @@ export default function LikesPage() {
                   <span className="text-4xl opacity-30">👤</span>
                 )}
               </div>
-              {isPremium ? (
+              {canSeeWhoLiked ? (
                 <Link
                   href={`/perfil/${v.viewerId}`}
                   className="block text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
@@ -252,7 +269,7 @@ export default function LikesPage() {
         </div>
       )}
 
-      {state === "ready" && !isPremium && (
+      {state === "ready" && !canSeeWhoLiked && (
         <div className="mt-8 text-center p-6 rounded-2xl border border-border bg-gradient-to-br from-fuchsia-50 to-rose-50 dark:from-fuchsia-950/30 dark:to-rose-950/30">
           <p className="text-2xl mb-2">⭐</p>
           <h2 className="font-semibold text-lg">Veja quem se interessou</h2>

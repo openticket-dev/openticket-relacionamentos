@@ -45,6 +45,48 @@ import {
   getVerticalQrContext,
   type VerticalRouteSlug,
 } from "./verticalContexts";
+import { gqlRequest, GqlClientError } from "@/lib/gql-client";
+
+// Backend real (subgraph eventos, ja em origin/staging). Anti-IDOR: o companyId
+// vem SEMPRE do JWT no gateway — o cliente so passa `vertical`. A query resolve
+// e a mutation grava apenas a empresa do caller.
+//   query    businessQrConfig(vertical: String!): BusinessQrConfig | null
+//   mutation saveBusinessQrConfig(input: SaveBusinessQrConfigInput!): BusinessQrConfig
+const BUSINESS_QR_CONFIG = /* GraphQL */ `
+  query BusinessQrConfig($vertical: String!) {
+    businessQrConfig(vertical: $vertical) {
+      id
+      variant
+      topText
+      bottomText
+      updatedAt
+    }
+  }
+`;
+
+const SAVE_BUSINESS_QR_CONFIG = /* GraphQL */ `
+  mutation SaveBusinessQrConfig($input: SaveBusinessQrConfigInput!) {
+    saveBusinessQrConfig(input: $input) {
+      id
+      variant
+      topText
+      bottomText
+      updatedAt
+    }
+  }
+`;
+
+type BusinessQrConfigDto = {
+  id: string;
+  variant: string;
+  topText?: string | null;
+  bottomText?: string | null;
+  updatedAt: string;
+};
+
+function isValidVariant(v: string): v is Variant {
+  return STYLED_QR_VARIANTS.some((x) => x.key === v);
+}
 
 export type QrDesignerProps = {
   /** PT-BR route slug of the vertical ERP mounting this designer. */
@@ -95,9 +137,9 @@ function savePersistedConfig(
   } catch {
     // ignore quota / private-mode errors
   }
-  // NOT_IMPLEMENTED: persist to GraphQL when the BusinessQrConfig resolver
-  // lands (upsertBusinessQrConfig(companyId, vertical, variant, ...)). Until
-  // then config is per-browser only — the UI states this honestly.
+  // localStorage e apenas cache local / fallback offline. A fonte de verdade e
+  // o backend via saveBusinessQrConfig (chamado em handleSave). Ver useEffect
+  // de hydrate: backend-first, localStorage so quando o backend nao responde.
 }
 
 export function QrDesigner({ vertical, companyId, backHref }: QrDesignerProps) {
@@ -115,22 +157,62 @@ export function QrDesigner({ vertical, companyId, backHref }: QrDesignerProps) {
   const [bottomText, setBottomText] = useState("");
   const [value, setValue] = useState(scopedPayload);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // synced=true quando a config veio/foi gravada no backend; backendOffline=true
+  // quando a query/mutation falhou e caimos no cache localStorage (honesto).
+  const [synced, setSynced] = useState(false);
+  const [backendOffline, setBackendOffline] = useState(false);
 
-  // Hydrate from localStorage (scoped to vertical+company); fall back to
-  // vertical defaults + the company-scoped payload.
+  // Hydrate: backend-first (businessQrConfig), fallback pro cache localStorage,
+  // e por fim defaults da vertical + payload escopado. O payload (URL) e sempre
+  // derivado de vertical+companyId — o backend guarda o template (variant+textos).
   useEffect(() => {
-    const persisted = loadPersistedConfig(ctx.slug, companyId);
-    if (persisted) {
-      setSelectedVariant(persisted.variant);
-      setTopText(persisted.topText);
-      setBottomText(persisted.bottomText);
-      setValue(persisted.payload || scopedPayload);
-      setSavedAt(persisted.updatedAt);
-    } else {
-      setTopText(ctx.defaultTopText);
-      setBottomText(ctx.defaultBottomText);
-      setValue(scopedPayload);
-    }
+    let alive = true;
+
+    const applyLocalOrDefaults = () => {
+      const persisted = loadPersistedConfig(ctx.slug, companyId);
+      if (persisted) {
+        setSelectedVariant(persisted.variant);
+        setTopText(persisted.topText);
+        setBottomText(persisted.bottomText);
+        setValue(persisted.payload || scopedPayload);
+        setSavedAt(persisted.updatedAt);
+      } else {
+        setTopText(ctx.defaultTopText);
+        setBottomText(ctx.defaultBottomText);
+        setValue(scopedPayload);
+      }
+    };
+
+    (async () => {
+      try {
+        const data = await gqlRequest<{
+          businessQrConfig: BusinessQrConfigDto | null;
+        }>(BUSINESS_QR_CONFIG, { vertical: ctx.slug });
+        if (!alive) return;
+        const cfg = data.businessQrConfig;
+        if (cfg) {
+          if (isValidVariant(cfg.variant)) setSelectedVariant(cfg.variant);
+          setTopText(cfg.topText ?? ctx.defaultTopText);
+          setBottomText(cfg.bottomText ?? ctx.defaultBottomText);
+          setValue(scopedPayload);
+          setSavedAt(cfg.updatedAt);
+          setSynced(true);
+        } else {
+          // Empresa ainda sem template salvo: cache local ou defaults.
+          applyLocalOrDefaults();
+        }
+      } catch {
+        // Backend indisponivel — degradacao honesta: usa cache local e sinaliza.
+        if (!alive) return;
+        setBackendOffline(true);
+        applyLocalOrDefaults();
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, [ctx.slug, ctx.defaultTopText, ctx.defaultBottomText, companyId, scopedPayload]);
 
   const returnTo = backHref ?? ctx.adminHref;
@@ -142,16 +224,47 @@ export function QrDesigner({ vertical, companyId, backHref }: QrDesignerProps) {
   const cardBorder = darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
   const subtleBg = darkMode ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)";
 
-  const handleSave = () => {
-    const config: PersistedConfig = {
+  const handleSave = async () => {
+    setSaving(true);
+    // Cache local imediato (fallback offline) — nao substitui o backend.
+    const localConfig: PersistedConfig = {
       variant: selectedVariant,
       topText,
       bottomText,
       payload: value,
       updatedAt: new Date().toISOString(),
     };
-    savePersistedConfig(ctx.slug, companyId, config);
-    setSavedAt(config.updatedAt);
+    savePersistedConfig(ctx.slug, companyId, localConfig);
+
+    try {
+      // Backend real: companyId vem do JWT (anti-IDOR); guard OWNER/ADMIN no
+      // gateway. Persiste o template (variant + textos) por empresa+vertical.
+      const data = await gqlRequest<{
+        saveBusinessQrConfig: BusinessQrConfigDto;
+      }>(SAVE_BUSINESS_QR_CONFIG, {
+        input: {
+          vertical: ctx.slug,
+          variant: selectedVariant,
+          topText: topText || null,
+          bottomText: bottomText || null,
+        },
+      });
+      const saved = data.saveBusinessQrConfig;
+      setSavedAt(saved.updatedAt);
+      setSynced(true);
+      setBackendOffline(false);
+    } catch (err) {
+      // Degradacao honesta: gravou no navegador, backend nao confirmou.
+      setSavedAt(localConfig.updatedAt);
+      setSynced(false);
+      setBackendOffline(
+        err instanceof GqlClientError ? false : true,
+      );
+      // GqlClientError => backend respondeu com erro (ex.: sem permissao
+      // OWNER/ADMIN). backendOffline fica false; a UI mostra "nao sincronizado".
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleResetPayload = () => setValue(scopedPayload);
@@ -364,24 +477,29 @@ export function QrDesigner({ vertical, companyId, backHref }: QrDesignerProps) {
           <div style={{ borderTop: `1px solid ${cardBorder}` }} className="pt-4">
             <button
               onClick={handleSave}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+              disabled={saving}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-60"
               style={{ background: ctx.accentColor, color: "#fff" }}
             >
               <Save className="h-4 w-4" />
-              Salvar como padrao desta empresa
+              {saving ? "Salvando..." : "Salvar como padrao desta empresa"}
             </button>
             {savedAt && (
               <p
                 className="mt-2 text-[10px] flex items-center gap-1"
-                style={{ color: "#10b981" }}
+                style={{ color: synced ? "#10b981" : "#f59e0b" }}
               >
                 <CheckCircle2 className="h-3 w-3" />
-                Salvo {new Date(savedAt).toLocaleString("pt-BR")}
+                {synced ? "Salvo na empresa" : "Salvo neste navegador"}{" "}
+                {new Date(savedAt).toLocaleString("pt-BR")}
               </p>
             )}
             <p className="mt-2 text-[10px] leading-snug" style={{ color: muted }}>
-              MVP: salva neste navegador. A sincronização com o backend da
-              empresa estará disponível em breve.
+              {synced
+                ? "Sincronizado com o backend da empresa (businessQrConfig). Vale em qualquer navegador de quem tem acesso."
+                : backendOffline
+                  ? "Backend indisponivel agora — salvamos neste navegador e sincronizamos quando o gateway responder."
+                  : "Salvo neste navegador. Ao salvar, sincronizamos com o backend da empresa (requer permissao OWNER/ADMIN)."}
             </p>
           </div>
         </aside>
