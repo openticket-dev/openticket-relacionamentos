@@ -1,6 +1,8 @@
 // Relacionamentos — Explore (perfis afinidade)
 // WIRE_REAL: grid de sugestoes via GraphQL discoverProfiles, ranqueado por score.
-// Os "motivos" de afinidade vem de matchedInterests (interesses em comum reais).
+// REL-S9: o motivo REAL da sugestao vem de `reasons` — "frequentam os mesmos
+// lugares" (mesma cidade) e "estiveram no mesmo evento" (co-attendance). So
+// aparece quando o backend capturou o sinal; matchedInterests fica de fallback.
 // Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
 
 "use client";
@@ -22,11 +24,24 @@ const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
         interests
         matchedInterests
         score
+        reasons {
+          kind
+          label
+          detail
+          count
+        }
       }
       nextCursor
     }
   }
 `;
+
+interface SuggestionReason {
+  kind: string;
+  label: string;
+  detail: string | null;
+  count: number;
+}
 
 interface DiscoveryProfile {
   id: string;
@@ -38,6 +53,7 @@ interface DiscoveryProfile {
   interests: string[];
   matchedInterests: string[];
   score: number;
+  reasons: SuggestionReason[];
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
@@ -241,13 +257,36 @@ export default function ExplorePage() {
                     </span>
                   )}
                 </div>
+                {/* REL-S9: motivo REAL da sugestao (so sinais capturados). */}
+                {p.reasons.length > 0 && (
+                  <ul className="flex flex-wrap gap-1.5 mb-3">
+                    {p.reasons.map((reason) => (
+                      <li
+                        key={reason.kind}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300"
+                        title={reason.detail ?? undefined}
+                      >
+                        <span aria-hidden>
+                          {reason.kind === "PLACES" ? "📍" : "🎟️"}
+                        </span>
+                        <span>{reason.label}</span>
+                        {reason.detail && (
+                          <span className="opacity-70">· {reason.detail}</span>
+                        )}
+                        {reason.kind === "EVENTS" && reason.count > 1 && (
+                          <span className="opacity-70">({reason.count})</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {p.matchedInterests.length > 0 ? (
                   <ul className="text-xs text-muted-foreground space-y-1 mb-4">
                     {p.matchedInterests.slice(0, 4).map((r) => (
                       <li key={r}>· {r}</li>
                     ))}
                   </ul>
-                ) : p.bio ? (
+                ) : p.reasons.length === 0 && p.bio ? (
                   <p className="text-xs text-muted-foreground mb-4 line-clamp-3">
                     {p.bio}
                   </p>
