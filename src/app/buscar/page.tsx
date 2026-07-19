@@ -258,6 +258,12 @@ export default function BuscarPage() {
           >
             Explorar
           </Link>
+          <Link
+            href="/sugestoes"
+            className="px-3 py-1.5 rounded-lg border border-border hover:bg-accent"
+          >
+            Sugestoes
+          </Link>
         </div>
       </header>
 
