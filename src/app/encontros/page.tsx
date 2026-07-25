@@ -10,6 +10,12 @@
  * parceiros (speed dating, retiros, jantares, workshops) do vertical B2B2C.
  * Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
  *
+ * REL-G1 (2026-07-25): encontro bookado no OT (PartnerEvent.ticketingEventId
+ * != null) ganha o card "comprar juntos" — 1 pedido com 2 ingressos lado a
+ * lado pro casal de um match. A query passa a pedir `ticketingEventId` porque
+ * e ele que decide se o card aparece; encontro sem ticketing segue so com o
+ * link do parceiro, como antes.
+ *
  * Stack: Next 16 App Router + R3F 9 (Tier 3).
  */
 
@@ -21,6 +27,7 @@ import {
   SparklesConstellation3D,
   type EncontroPoint,
 } from "@/components/SparklesConstellation3D";
+import { ComprarJuntosCard } from "@/components/ComprarJuntosCard";
 
 // Contrato (introspection PartnerEvent): { id title kind description city state
 //   startsAt endsAt partnerName imageUrl externalUrl tags ... }
@@ -36,6 +43,7 @@ const PARTNER_EVENTS_QUERY = /* GraphQL */ `
       endsAt
       partnerName
       externalUrl
+      ticketingEventId
     }
   }
 `;
@@ -58,6 +66,8 @@ interface PartnerEvent {
   endsAt: string | null;
   partnerName: string | null;
   externalUrl: string | null;
+  /** REL-G1: != null => encontro vende ingresso pelo OT (card comprar juntos). */
+  ticketingEventId: string | null;
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
@@ -241,30 +251,42 @@ export default function EncontrosPage() {
               {events.map((e) => (
                 <li
                   key={e.id}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex items-center justify-between gap-4"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold truncate">{e.title}</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {e.partnerName ? `${e.partnerName} · ` : ""}
-                      {[e.city, e.state].filter(Boolean).join("/")}
-                      {e.city || e.state ? " · " : ""}
-                      {formatScheduled(e.startsAt)}
-                    </p>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold truncate">{e.title}</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {e.partnerName ? `${e.partnerName} · ` : ""}
+                        {[e.city, e.state].filter(Boolean).join("/")}
+                        {e.city || e.state ? " · " : ""}
+                        {formatScheduled(e.startsAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <KindBadge kind={e.kind} />
+                      {e.externalUrl && (
+                        <a
+                          href={e.externalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-fuchsia-300 hover:text-fuchsia-200 underline"
+                        >
+                          Detalhes
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <KindBadge kind={e.kind} />
-                    {e.externalUrl && (
-                      <a
-                        href={e.externalUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-fuchsia-300 hover:text-fuchsia-200 underline"
-                      >
-                        Detalhes
-                      </a>
-                    )}
-                  </div>
+
+                  {/* REL-G1 — so aparece quando o encontro esta bookado no OT.
+                      A cotacao (preco/assentos) e buscada ao ABRIR o card. */}
+                  {e.ticketingEventId && (
+                    <ComprarJuntosCard
+                      partnerEventId={e.id}
+                      partnerEventTitle={e.title}
+                      externalUrl={e.externalUrl}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
