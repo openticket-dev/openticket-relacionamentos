@@ -49,6 +49,14 @@ export default function RelacionamentosAdminPage() {
           >
             QR Designer
           </Link>
+          {/* REL-G2 — configurador dos pesos do algoritmo de match (backend
+              real: matchAlgorithmConfig / saveMatchAlgorithmConfig). */}
+          <Link
+            href="/admin/algoritmo"
+            className="px-5 py-2.5 rounded-lg border border-fuchsia-600 text-fuchsia-600 font-semibold hover:bg-fuchsia-50 transition-colors text-sm"
+          >
+            Algoritmo de match
+          </Link>
           <Link
             href="/landing"
             className="px-5 py-2.5 rounded-lg bg-fuchsia-600 text-white font-semibold hover:bg-fuchsia-700 transition-colors text-sm"
