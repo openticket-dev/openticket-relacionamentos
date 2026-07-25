@@ -9,6 +9,12 @@
  *
  * Auth: cookies `credentials: include`; tenant (companyId) SEMPRE do JWT no
  * backend — o client nao manda companyId. Zero-mock em todos os estados.
+ *
+ * TENANT (backend REL-G5, pos-auditoria): o lookup do token ja e escopado por
+ * companyId do JWT. QR de convite de OUTRA empresa devolve o mesmo
+ * "Invite not found for this QR token" de token invalido — a porta nunca
+ * confirma a existencia de convite de outro tenant. A tela so repassa a
+ * mensagem do backend, sem interpretar.
  */
 
 "use client";

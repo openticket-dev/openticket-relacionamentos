@@ -9,6 +9,12 @@
  * tenant — companyId NUNCA sai do client). Zero-mock: estados loading/ready/
  * empty/error reais; sem convite => estado vazio honesto.
  *
+ * TENANT (backend REL-G5, pos-auditoria): o painel so enxerga evento e
+ * check-ins da PROPRIA empresa — o backend filtra por companyId do JWT
+ * (PartnerEvent.companyId -> PartnerEventCheckin.companyId). Evento de outro
+ * tenant (ou inexistente) volta a MESMA resposta "not found", de proposito:
+ * a tela mostra isso literalmente, sem inventar lista vazia "com sucesso".
+ *
  * Stack: Next 16 App Router (client page, use(params) igual /perfil/[id]).
  */
 
@@ -68,6 +74,19 @@ function fmtTime(iso: string | null): string {
 
 function guestLabel(c: CheckinRow): string {
   return c.profileDisplayName ?? `Perfil ${c.profileId.slice(0, 10)}…`;
+}
+
+/**
+ * Erro de escopo de tenant (evento de outra empresa / inexistente / JWT sem
+ * companyId). O backend responde igual pros dois primeiros casos de proposito —
+ * a dica abaixo explica sem afirmar qual deles e.
+ */
+function tenantHint(msg: string | null): string | null {
+  if (!msg) return null;
+  if (/not found|forbidden|companyId|another company/i.test(msg)) {
+    return "Esse evento nao esta na sua empresa (ou nao existe). O painel so mostra eventos e check-ins do proprio tenant.";
+  }
+  return null;
 }
 
 export default function AdminEventoPainelPage({
@@ -187,7 +206,14 @@ export default function AdminEventoPainelPage({
             <p className="text-lg font-semibold mb-1">
               Nao foi possivel carregar o painel
             </p>
-            <p className="text-sm text-rose-300 mb-4">{errorMessage}</p>
+            <div className="mb-4 space-y-2">
+              <p className="text-sm text-rose-300">{errorMessage}</p>
+              {tenantHint(errorMessage) && (
+                <p className="text-xs text-rose-400/80">
+                  {tenantHint(errorMessage)}
+                </p>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => load(false)}
