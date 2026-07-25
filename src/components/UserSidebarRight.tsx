@@ -81,6 +81,17 @@ export function UserSidebarRight({ className }: UserSidebarRightProps) {
           </div>
         </section>
 
+        {/* Section: Favoritos (REL-S6) — acesso rapido as listas do usuario */}
+        <section>
+          <h3 className="text-sm font-semibold mb-2">Favoritos</h3>
+          <Link
+            href="/favoritos"
+            className="flex items-center gap-2 text-xs text-fuchsia-600 hover:underline"
+          >
+            ⭐ Minhas listas de pessoas →
+          </Link>
+        </section>
+
         {/* Section: Preferencias quick-toggle */}
         <section>
           <h3 className="text-sm font-semibold mb-2">Preferencias</h3>
