@@ -10,7 +10,7 @@
  *                                           grupo + eventos exclusivos
  *                                           (card 02.4, ajuste-imagem 17/07)
  *   communityGroupMembers                 — membros (SO pra quem e membro)
- *   communityFeed / createCommunityPost   — feed real com composer
+ *   relacionamentosCommunityFeed / createCommunityPost   — feed real com composer
  *   joinCommunityGroup / leaveCommunityGroup
  *
  * Zero-mock: 4 estados (loading/ready/empty/error) por secao; estado vazio
@@ -91,7 +91,7 @@ const GROUPS_QUERY = /* GraphQL */ `
 
 const FEED_QUERY = /* GraphQL */ `
   query RelComunidadeFeed($input: CommunityFeedInput) {
-    communityFeed(input: $input) {
+    relacionamentosCommunityFeed(input: $input) {
       id
       groupId
       groupName
@@ -264,11 +264,11 @@ export default function ComunidadePage() {
     setFeedState("loading");
     setFeedError(null);
     try {
-      const data = await gqlRequest<{ communityFeed: CommunityPost[] }>(
+      const data = await gqlRequest<{ relacionamentosCommunityFeed: CommunityPost[] }>(
         FEED_QUERY,
         { input: { limit: 50 } },
       );
-      const items = data.communityFeed ?? [];
+      const items = data.relacionamentosCommunityFeed ?? [];
       setPosts(items);
       setFeedState(items.length === 0 ? "empty" : "ready");
     } catch (err) {

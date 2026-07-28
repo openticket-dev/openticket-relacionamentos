@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
  * sidebar "Comunidade" do shell apontava pra ca com TODO(W-PARALELO-2-P9)
  * cravando o href correto /comunidade.
  *
- * REL-S4 criou o backend real de comunidade (communityGroups/communityFeed/
+ * REL-S4 criou o backend real de comunidade (communityGroups/relacionamentosCommunityFeed/
  * communityGroupMembers/communityGroupActivities no subgraph relacionamentos)
  * e a page /comunidade. A sidebar do shell agora aponta direto pra
  * /comunidade; este redirect tira o empty-state do caminho de quem ainda
