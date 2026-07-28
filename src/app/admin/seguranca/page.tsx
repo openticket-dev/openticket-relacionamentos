@@ -196,7 +196,7 @@ export default function SegurancaOverviewPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Link
           href="/admin/seguranca/denuncias"
           className="p-6 rounded-lg border border-border hover:border-fuchsia-500 transition-colors group"
@@ -233,6 +233,19 @@ export default function SegurancaOverviewPage() {
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
             Log imutavel de acoes (LGPD compliance)
+          </p>
+        </Link>
+
+        <Link
+          href="/admin/seguranca/kyc"
+          className="p-6 rounded-lg border border-border hover:border-fuchsia-500 transition-colors group"
+        >
+          <p className="text-2xl mb-2">🪪</p>
+          <h3 className="font-semibold group-hover:text-fuchsia-600">
+            KYC
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Funil de verificacao: aprovados, rejeitados, pendentes, expirados
           </p>
         </Link>
       </section>

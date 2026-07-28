@@ -7,13 +7,25 @@
 // status createdAt reviewedAt reviewerId priorReportsAgainstSubject }. Status
 // enum PlatformReportStatus = PENDING | REVIEWED | ACTIONED | DISMISSED. NAO ha
 // reporterName/targetName/evidenceUrls no gateway — renderiza ids reais.
+//
+// REL-G4: coluna RISCO wire real na query trustSignalsBatch (motor anti-catfish,
+// 9 sinais medidos em dados proprios). A coluna carrega DEPOIS da fila, em lotes
+// de 25 ids, e cada estado tem texto proprio (calculando / n/d / sem perfil /
+// sem sinal). Nenhum score é inventado quando o motor nao mede.
 
 "use client";
 
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { RiskCell, RiskDetail, type TrustLoadState } from "./RiskCell";
+import {
+  chunk,
+  fetchTrustSignalsBatch,
+  TRUST_BATCH_LIMIT,
+  type TrustReport,
+} from "./trust-signals";
 
 type ReportStatus = "PENDING" | "REVIEWED" | "ACTIONED" | "DISMISSED";
 
@@ -114,6 +126,12 @@ export default function DenunciasPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<ReportStatus | "all">("all");
   const [acting, setActing] = useState<string | null>(null);
+  // REL-G4 — risco por perfil denunciado (motor de trust-signals).
+  const [trust, setTrust] = useState<Record<string, TrustReport>>({});
+  const [trustMissing, setTrustMissing] = useState<string[]>([]);
+  const [trustState, setTrustState] = useState<TrustLoadState>("idle");
+  const [trustError, setTrustError] = useState<string | null>(null);
+  const [expandedRisk, setExpandedRisk] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -135,6 +153,50 @@ export default function DenunciasPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Ids denunciados da pagina atual — deduplicados.
+  const reportedIds = useMemo(
+    () => Array.from(new Set(reports.map((r) => r.reportedId))),
+    [reports],
+  );
+
+  // Carrega o risco em lotes de 25 (teto do resolver), preenchendo a coluna
+  // conforme chega. Falha de um lote NAO apaga o que ja veio.
+  useEffect(() => {
+    if (reportedIds.length === 0) {
+      setTrustState("idle");
+      return;
+    }
+    let cancelled = false;
+    setTrustState("loading");
+    setTrustError(null);
+    (async () => {
+      try {
+        for (const lote of chunk(reportedIds, TRUST_BATCH_LIMIT)) {
+          const batch = await fetchTrustSignalsBatch(lote);
+          if (cancelled) return;
+          setTrust((prev) => {
+            const next = { ...prev };
+            for (const item of batch.items) next[item.profileId] = item;
+            return next;
+          });
+          setTrustMissing((prev) =>
+            Array.from(new Set([...prev, ...batch.missingProfileIds])),
+          );
+        }
+        if (!cancelled) setTrustState("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setTrustError(
+          err instanceof Error ? err.message : "Falha ao calcular risco",
+        );
+        setTrustState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportedIds]);
 
   const respond = async (id: string) => {
     setActing(id);
@@ -193,6 +255,13 @@ export default function DenunciasPage() {
         <h1 className="text-2xl font-semibold mt-2">Denuncias</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Fila de moderacao. Acoes ficam logadas em Auditoria (LGPD).
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          A coluna <strong>Risco</strong> vem do motor de trust-signals
+          anti-catfish: 9 sinais medidos no proprio banco (idade da conta,
+          verificacao, denuncias, bloqueios, velocidade e template de mensagem,
+          reciprocidade, geo/device, reuso de foto). Clique no selo pra ver sinal
+          por sinal. Sem sinal medido, nao ha score — e a celula diz isso.
         </p>
       </header>
 
@@ -278,6 +347,7 @@ export default function DenunciasPage() {
                   <th className="text-left p-3 font-medium">Alvo</th>
                   <th className="text-left p-3 font-medium">Motivo</th>
                   <th className="text-left p-3 font-medium">Reinc.</th>
+                  <th className="text-left p-3 font-medium">Risco</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Quando</th>
                   <th className="text-left p-3 font-medium">Acoes</th>
@@ -285,7 +355,8 @@ export default function DenunciasPage() {
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.id} className="border-t border-border">
+                  <Fragment key={r.id}>
+                  <tr className="border-t border-border">
                     <td className="p-3 font-mono text-xs">
                       {r.id.slice(0, 8)}
                     </td>
@@ -298,6 +369,18 @@ export default function DenunciasPage() {
                     <td className="p-3">{r.reason}</td>
                     <td className="p-3 text-center">
                       {r.priorReportsAgainstSubject}
+                    </td>
+                    <td className="p-3">
+                      <RiskCell
+                        report={trust[r.reportedId]}
+                        state={trustState}
+                        missing={trustMissing.includes(r.reportedId)}
+                        error={trustError}
+                        expanded={expandedRisk === r.id}
+                        onToggle={() =>
+                          setExpandedRisk((cur) => (cur === r.id ? null : r.id))
+                        }
+                      />
                     </td>
                     <td className="p-3">
                       <span
@@ -326,6 +409,14 @@ export default function DenunciasPage() {
                       </button>
                     </td>
                   </tr>
+                  {expandedRisk === r.id && trust[r.reportedId] ? (
+                    <tr className="border-t border-border">
+                      <td colSpan={9} className="p-0">
+                        <RiskDetail report={trust[r.reportedId]} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

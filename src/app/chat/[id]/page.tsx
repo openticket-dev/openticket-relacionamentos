@@ -9,11 +9,19 @@
 //   Fluxo: prepareMessageUpload (mutation) -> PUT bytes direto no R2 ->
 //   sendMessage com attachmentUrl/Type/Mime. Render inline por tipo. O backend
 //   modera o anexo (attachmentStatus PENDING ate liberar).
+//
+// REL-G1 (2026-07-25) COMPRAR JUNTOS: a conversa ganha o card de encontro com
+//   ingresso pareado. A rota entrega o conversationId; o matchId (que a compra
+//   pareada exige) sai de `myConversations`, que ja expoe `matchId` por
+//   conversa. Encontros listados via `partnerEvents`, filtrados aos que estao
+//   bookados no OT (ticketingEventId != null). O bloco carrega SOZINHO: se
+//   falhar, o chat continua funcionando normalmente.
 
 "use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, use } from "react";
+import { ComprarJuntosCard } from "@/components/ComprarJuntosCard";
 
 const MESSAGES_QUERY = /* GraphQL */ `
   query MessagesInConversation($input: ListMessagesInput!) {
@@ -26,6 +34,11 @@ const MESSAGES_QUERY = /* GraphQL */ `
       attachmentType
       attachmentMime
       attachmentStatus
+      ephemeral
+      expiresAt
+      viewOnce
+      viewedAt
+      attachmentPurgedAt
       createdAt
       readAt
     }
@@ -51,8 +64,29 @@ const SEND_MESSAGE_MUTATION = /* GraphQL */ `
       attachmentType
       attachmentMime
       attachmentStatus
+      ephemeral
+      expiresAt
+      viewOnce
+      viewedAt
+      attachmentPurgedAt
       createdAt
       readAt
+    }
+  }
+`;
+
+// REL-S7 — foto temporaria. O receiver abriu o anexo efemero: marca viewedAt e,
+// se viewOnce, dispara o purge REAL do binario no R2 (o backend devolve
+// attachmentUrl null + attachmentPurgedAt).
+const MARK_MEDIA_VIEWED_MUTATION = /* GraphQL */ `
+  mutation MarkMediaViewed($input: MarkMediaViewedInput!) {
+    markMediaViewed(input: $input) {
+      id
+      attachmentUrl
+      attachmentMime
+      attachmentStatus
+      viewedAt
+      attachmentPurgedAt
     }
   }
 `;
@@ -65,6 +99,31 @@ const PREPARE_UPLOAD_MUTATION = /* GraphQL */ `
       attachmentUrl
       attachmentType
       attachmentMime
+    }
+  }
+`;
+
+// REL-G1 — conversationId -> matchId (a compra pareada e por MATCH, nao por
+// conversa). `myConversations` ja devolve os dois ids; nao ha query dedicada e
+// nao vamos inventar uma no client.
+const MY_CONVERSATIONS_QUERY = /* GraphQL */ `
+  query MyConversationsForPaired {
+    myConversations {
+      id
+      matchId
+    }
+  }
+`;
+
+// REL-G1 — encontros curados; so os com ticketingEventId vendem pelo OT.
+const PARTNER_EVENTS_QUERY = /* GraphQL */ `
+  query PartnerEventsForPaired($input: PartnerEventsInput) {
+    partnerEvents(input: $input) {
+      id
+      title
+      startsAt
+      externalUrl
+      ticketingEventId
     }
   }
 `;
@@ -83,6 +142,12 @@ interface RelacMessage {
   attachmentType: string | null;
   attachmentMime: string | null;
   attachmentStatus: string | null;
+  // REL-S7 — foto temporaria (midia efemera).
+  ephemeral?: boolean | null;
+  expiresAt?: string | null;
+  viewOnce?: boolean | null;
+  viewedAt?: string | null;
+  attachmentPurgedAt?: string | null;
   createdAt: string;
   readAt: string | null;
 }
@@ -135,6 +200,13 @@ export default function ChatPage({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  // REL-S7 — foto temporaria. Flags aplicadas ao PROXIMO anexo enviado.
+  const [ephemeralNext, setEphemeralNext] = useState(false);
+  const [viewOnceNext, setViewOnceNext] = useState(false);
+  // Ids de anexos view-once ja revelados NESTA sessao — mantem a <img> na tela
+  // mesmo depois do purge server-side (o backend zera a URL; o browser segura os
+  // bytes ja baixados). No reload volta como "foto expirada".
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -225,6 +297,9 @@ export default function ChatPage({
       }
 
       // 3) Envia a mensagem com o anexo (content opcional vai junto se houver).
+      // REL-S7: marca a foto como temporaria (ephemeral) e/ou visualizacao unica
+      // (viewOnce). viewOnce implica ephemeral no backend. A expiracao acontece
+      // no backend (o binario some do R2), nao so escondida aqui.
       const res = await gql<{ sendMessage: RelacMessage }>(
         SEND_MESSAGE_MUTATION,
         {
@@ -234,11 +309,16 @@ export default function ChatPage({
             attachmentUrl,
             attachmentType,
             attachmentMime,
+            ephemeral: ephemeralNext || viewOnceNext,
+            viewOnce: viewOnceNext,
           },
         },
       );
       setMessages((prev) => [...prev, res.sendMessage]);
       setDraft("");
+      // Reseta as flags de efemero apos o envio (nao "gruda" no proximo anexo).
+      setEphemeralNext(false);
+      setViewOnceNext(false);
       if (state === "empty") setState("ready");
     } catch (err) {
       setSendError(
@@ -249,6 +329,46 @@ export default function ChatPage({
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  // REL-S7 — o receiver abriu uma foto view-once. Revela localmente (guarda os
+  // bytes na tela) e dispara markMediaViewed, que purga o binario no R2. Chamado
+  // no onLoad da <img> pra garantir que os bytes ja foram baixados antes do purge.
+  const handleMarkViewed = useCallback(async (messageId: string) => {
+    try {
+      const res = await gql<{ markMediaViewed: Partial<RelacMessage> }>(
+        MARK_MEDIA_VIEWED_MUTATION,
+        { input: { messageId } },
+      );
+      // Merge SO os campos de estado (viewedAt/purged/status) — NAO sobrescreve
+      // attachmentUrl local com null, senao a <img> revelada sumiria na hora.
+      const patch = res.markMediaViewed;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                viewedAt: patch.viewedAt ?? m.viewedAt,
+                attachmentPurgedAt:
+                  patch.attachmentPurgedAt ?? m.attachmentPurgedAt,
+                attachmentStatus: patch.attachmentStatus ?? m.attachmentStatus,
+              }
+            : m,
+        ),
+      );
+    } catch (err) {
+      setSendError(
+        err instanceof Error ? err.message : "Falha ao abrir a foto",
+      );
+    }
+  }, []);
+
+  const revealViewOnce = useCallback((messageId: string) => {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+  }, []);
 
   return (
     <main className="min-h-screen flex flex-col max-w-2xl mx-auto">
@@ -293,6 +413,10 @@ export default function ChatPage({
           Nunca compartilhe codigos de WhatsApp, CPF, senhas ou dados bancarios.
         </p>
       </div>
+
+      {/* REL-G1 — sugestao de encontro com ingresso pareado pro casal desta
+          conversa. Carrega sozinho e some quando nao ha nada real pra oferecer. */}
+      <ComprarJuntosSection conversationId={conversationId} />
 
       <section className="flex-1 p-4 space-y-3 overflow-y-auto min-h-[400px]">
         {/* Loading */}
@@ -351,7 +475,15 @@ export default function ChatPage({
                       : "bg-muted text-foreground"
                   }`}
                 >
-                  {m.attachmentUrl && <Attachment message={m} />}
+                  {(m.attachmentUrl || m.attachmentType) && (
+                    <Attachment
+                      message={m}
+                      fromMe={fromMe}
+                      revealed={revealedIds.has(m.id)}
+                      onReveal={revealViewOnce}
+                      onViewed={handleMarkViewed}
+                    />
+                  )}
                   {m.content && (
                     <p className="text-sm whitespace-pre-wrap break-words">
                       {m.content}
@@ -383,9 +515,58 @@ export default function ChatPage({
         </p>
       )}
 
+      {/* REL-S7 — modo foto temporaria. Aplica ao PROXIMO anexo. viewOnce
+          (ver uma vez) implica temporaria. */}
+      <div className="px-4 pt-2 flex flex-wrap gap-2 items-center border-t border-border">
+        <span className="text-[11px] text-muted-foreground">Foto:</span>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !ephemeralNext;
+            setEphemeralNext(next);
+            if (!next) setViewOnceNext(false);
+          }}
+          aria-pressed={ephemeralNext}
+          disabled={uploading}
+          className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors disabled:opacity-50 ${
+            ephemeralNext
+              ? "bg-fuchsia-600 text-white border-fuchsia-600"
+              : "border-border text-muted-foreground hover:bg-accent"
+          }`}
+          title="A foto some do servidor depois de um tempo (24h por padrao)"
+        >
+          ⏳ Temporária
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !viewOnceNext;
+            setViewOnceNext(next);
+            if (next) setEphemeralNext(true);
+          }}
+          aria-pressed={viewOnceNext}
+          disabled={uploading}
+          className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors disabled:opacity-50 ${
+            viewOnceNext
+              ? "bg-fuchsia-600 text-white border-fuchsia-600"
+              : "border-border text-muted-foreground hover:bg-accent"
+          }`}
+          title="A foto é apagada do servidor assim que o outro abre (visualização única)"
+        >
+          👁 Ver uma vez
+        </button>
+        {(ephemeralNext || viewOnceNext) && (
+          <span className="text-[10px] text-fuchsia-500">
+            {viewOnceNext
+              ? "some ao ser aberta"
+              : "some do servidor em 24h"}
+          </span>
+        )}
+      </div>
+
       <form
         onSubmit={handleSendText}
-        className="p-4 border-t border-border flex gap-2 items-center"
+        className="p-4 border-t-0 flex gap-2 items-center"
       >
         {/* Anexo: foto / audio / gif via R2 (presigned PUT). */}
         <input
@@ -428,15 +609,172 @@ export default function ChatPage({
 }
 
 /**
+ * REL-G1 — bloco "comprar juntos" dentro da conversa.
+ *
+ * Resolve o matchId da conversa (via `myConversations`) e lista os encontros
+ * que REALMENTE vendem ingresso pelo OT (`ticketingEventId != null`). Cada um
+ * vira um ComprarJuntosCard ja com o casal fixado — o usuario nao precisa
+ * escolher com quem vai, e a conversa que diz.
+ *
+ * Some por completo (render null) quando nao ha matchId ou nao ha encontro
+ * bookado: nada de card vazio prometendo o que nao existe. Erro aqui NAO
+ * derruba o chat — e um bloco lateral, carregado de forma independente.
+ */
+function ComprarJuntosSection({
+  conversationId,
+}: {
+  conversationId: string;
+}) {
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [events, setEvents] = useState<
+    Array<{
+      id: string;
+      title: string;
+      startsAt: string;
+      externalUrl: string | null;
+      ticketingEventId: string | null;
+    }>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [convRes, evtRes] = await Promise.all([
+          gql<{ myConversations: Array<{ id: string; matchId: string }> | null }>(
+            MY_CONVERSATIONS_QUERY,
+          ),
+          gql<{
+            partnerEvents: Array<{
+              id: string;
+              title: string;
+              startsAt: string;
+              externalUrl: string | null;
+              ticketingEventId: string | null;
+            }> | null;
+          }>(PARTNER_EVENTS_QUERY, { input: { limit: 20 } }),
+        ]);
+        if (cancelled) return;
+        const conv = (convRes.myConversations ?? []).find(
+          (c) => c.id === conversationId,
+        );
+        setMatchId(conv?.matchId ?? null);
+        setEvents(
+          (evtRes.partnerEvents ?? []).filter((e) => !!e.ticketingEventId),
+        );
+      } catch {
+        // Silencioso de proposito: sem encontro pareado o chat segue igual.
+        if (!cancelled) {
+          setMatchId(null);
+          setEvents([]);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  if (!matchId || events.length === 0) return null;
+
+  return (
+    <div className="px-4 py-3 border-b border-border space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        Sugestao de encontro — comprem os dois ingressos juntos
+      </p>
+      {events.slice(0, 3).map((e) => (
+        <ComprarJuntosCard
+          key={e.id}
+          partnerEventId={e.id}
+          partnerEventTitle={e.title}
+          externalUrl={e.externalUrl}
+          fixedMatchId={matchId}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
  * Render inline do anexo por tipo. attachmentStatus PENDING mostra um aviso de
  * moderacao (o backend libera apos o classificador). image/gif -> <img>,
  * audio -> <audio controls>.
+ *
+ * REL-S7 — foto temporaria (midia efemera):
+ *  - gone: o backend purgou o binario (attachmentPurgedAt / attachmentUrl null
+ *    num anexo efemero) -> placeholder "Foto expirada". A expiracao eh REAL:
+ *    o arquivo some do R2, nao eh so escondido aqui.
+ *  - viewOnce ainda nao aberta pelo receiver -> gate "Toque para ver (uma vez)".
+ *    Ao abrir, a <img> baixa os bytes e no onLoad dispara onViewed -> o backend
+ *    apaga o binario. `revealed` segura a foto na tela nesta sessao; no reload
+ *    volta como expirada.
+ *  - efemera com TTL -> badge de expiracao.
  */
-function Attachment({ message }: { message: RelacMessage }) {
-  const { attachmentUrl, attachmentType, attachmentStatus } = message;
-  if (!attachmentUrl) return null;
+function Attachment({
+  message,
+  fromMe,
+  revealed,
+  onReveal,
+  onViewed,
+}: {
+  message: RelacMessage;
+  fromMe: boolean;
+  revealed: boolean;
+  onReveal: (id: string) => void;
+  onViewed: (id: string) => void;
+}) {
+  const {
+    id,
+    attachmentUrl,
+    attachmentType,
+    attachmentStatus,
+    ephemeral,
+    expiresAt,
+    viewOnce,
+    attachmentPurgedAt,
+  } = message;
+
   const pending = attachmentStatus === "PENDING";
   const isAudio = attachmentType === "audio";
+
+  // Sumiu de verdade: backend purgou (attachmentPurgedAt) ou zerou a URL de um
+  // anexo efemero. `revealed` (view-once aberta nesta sessao) tem prioridade e
+  // mantem a <img> na tela mesmo apos o purge server-side.
+  const gone =
+    !revealed && !!ephemeral && (attachmentPurgedAt != null || !attachmentUrl);
+
+  if (gone) {
+    return (
+      <div className="mb-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-4 text-center">
+        <p className="text-2xl leading-none">🫥</p>
+        <p className="text-[11px] text-muted-foreground mt-1">Foto expirada</p>
+      </div>
+    );
+  }
+
+  // View-once ainda nao aberta pelo receiver: mostra o gate.
+  const viewOnceGate =
+    !!viewOnce && !fromMe && !revealed && attachmentUrl != null;
+  if (viewOnceGate) {
+    return (
+      <button
+        type="button"
+        onClick={() => onReveal(id)}
+        className="mb-1.5 w-full rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/10 px-3 py-5 text-center hover:bg-fuchsia-500/20 transition-colors"
+        title="Visualização única — some do servidor ao abrir"
+      >
+        <p className="text-2xl leading-none">👁</p>
+        <p className="text-[11px] mt-1 font-medium">Toque para ver (uma vez)</p>
+      </button>
+    );
+  }
+
+  if (!attachmentUrl) return null;
+
+  // So dispara o purge quando eh o receiver revelando uma view-once (o onLoad
+  // garante que os bytes ja foram baixados antes do backend apagar).
+  const revealPurge = !!viewOnce && !fromMe && revealed;
 
   return (
     <div className="mb-1.5">
@@ -455,13 +793,54 @@ function Attachment({ message }: { message: RelacMessage }) {
           alt={attachmentType === "gif" ? "GIF" : "Foto"}
           className="rounded-lg max-h-64 w-auto object-cover"
           loading="lazy"
+          onLoad={revealPurge ? () => onViewed(id) : undefined}
         />
       )}
       {pending && (
-        <p className="text-[10px] opacity-80 mt-0.5">
-          ⏳ Em moderacao
-        </p>
+        <p className="text-[10px] opacity-80 mt-0.5">⏳ Em moderacao</p>
+      )}
+      {ephemeral && (
+        <EphemeralBadge
+          viewOnce={!!viewOnce}
+          expiresAt={expiresAt ?? null}
+          revealed={revealed}
+        />
       )}
     </div>
   );
+}
+
+/** Rotulo do estado efemero: visualizacao unica ou countdown de expiracao. */
+function EphemeralBadge({
+  viewOnce,
+  expiresAt,
+  revealed,
+}: {
+  viewOnce: boolean;
+  expiresAt: string | null;
+  revealed: boolean;
+}) {
+  if (viewOnce) {
+    return (
+      <p className="text-[10px] text-fuchsia-500 mt-0.5">
+        👁 {revealed ? "vista — apagada do servidor" : "some ao abrir"}
+      </p>
+    );
+  }
+  const label = formatRemaining(expiresAt);
+  if (!label) return null;
+  return <p className="text-[10px] text-fuchsia-500 mt-0.5">⏳ {label}</p>;
+}
+
+/** Tempo restante ate a expiracao, em rotulo curto pt-BR. */
+function formatRemaining(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return null;
+  if (ms <= 0) return "expirando...";
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (h >= 1) return `expira em ${h}h`;
+  if (m >= 1) return `expira em ${m}min`;
+  return "expira em <1min";
 }
