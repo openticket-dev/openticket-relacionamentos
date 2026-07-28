@@ -1,38 +1,43 @@
-// Relacionamentos — Explore (perfis afinidade)
-// WIRE_REAL: grid de sugestoes via GraphQL discoverProfiles, ranqueado por score.
+// Relacionamentos — Sugestoes diarias (card 01.6 "Conexoes Sugeridas")
+// WIRE_REAL: lista via GraphQL dailySuggestions, ranqueada pelo score do backend
+// (DNA/afinidade + sinal geografico + co-attendance de eventos — REL-S9).
 // REL-S9: o motivo REAL da sugestao vem de `reasons` — "frequentam os mesmos
 // lugares" (mesma cidade) e "estiveram no mesmo evento" (co-attendance). So
-// aparece quando o backend capturou o sinal; matchedInterests fica de fallback.
-// Zero-mock: estados loading/ready/empty/error; sem fake data inventada.
+// aparece quando o backend capturou o sinal — nunca inventado (zero-mock).
+// Dispensar usa a mutation real dismissSuggestion. Estados loading/ready/empty/error.
 
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { SUBVERTICALS } from "@/lib/subverticals";
-import { SaveToFavoritesButton } from "@/components/SaveToFavoritesButton";
 
-const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
-  query DiscoverProfilesExplore($filters: DiscoveryFiltersInput) {
-    discoverProfiles(filters: $filters) {
-      profiles {
-        id
-        displayName
-        avatar
-        age
-        distance
-        bio
-        interests
-        matchedInterests
-        score
-        reasons {
-          kind
-          label
-          detail
-          count
-        }
+const DAILY_SUGGESTIONS_QUERY = /* GraphQL */ `
+  query DailySuggestions($input: DailySuggestionsInput) {
+    dailySuggestions(input: $input) {
+      id
+      profileId
+      displayName
+      avatar
+      age
+      distanceKm
+      bio
+      interests
+      score
+      source
+      reasons {
+        kind
+        label
+        detail
+        count
       }
-      nextCursor
+    }
+  }
+`;
+
+const DISMISS_SUGGESTION_MUTATION = /* GraphQL */ `
+  mutation DismissSuggestion($input: DismissSuggestionInput!) {
+    dismissSuggestion(input: $input) {
+      ok
     }
   }
 `;
@@ -44,36 +49,59 @@ interface SuggestionReason {
   count: number;
 }
 
-interface DiscoveryProfile {
+interface SuggestionCard {
   id: string;
+  profileId: string;
   displayName: string | null;
   avatar: string | null;
   age: number | null;
-  distance: number | null;
+  distanceKm: number | null;
   bio: string | null;
   interests: string[];
-  matchedInterests: string[];
   score: number;
+  source: string | null;
   reasons: SuggestionReason[];
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
-type SortMode = "affinity" | "nearby";
 
-async function fetchDiscovery(
-  subverticais: string[] | null,
-): Promise<DiscoveryProfile[]> {
+async function fetchDailySuggestions(): Promise<SuggestionCard[]> {
   const res = await fetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
-      query: DISCOVER_PROFILES_QUERY,
+      query: DAILY_SUGGESTIONS_QUERY,
+      variables: { input: { limit: 20 } },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    data?: { dailySuggestions: SuggestionCard[] | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  return json.data?.dailySuggestions ?? [];
+}
+
+async function dismissSuggestion(
+  suggestedId: string,
+  source: string | null,
+): Promise<boolean> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      query: DISMISS_SUGGESTION_MUTATION,
       variables: {
-        filters: {
-          limit: 30,
-          cursor: 0,
-          ...(subverticais && subverticais.length > 0 ? { subverticais } : {}),
+        input: {
+          suggestedId,
+          ...(source ? { source } : {}),
         },
       },
     }),
@@ -82,38 +110,34 @@ async function fetchDiscovery(
     throw new Error(`HTTP ${res.status}`);
   }
   const json = (await res.json()) as {
-    data?: { discoverProfiles: { profiles: DiscoveryProfile[] } | null };
+    data?: { dismissSuggestion: { ok: boolean } | null };
     errors?: { message: string }[];
   };
   if (json.errors && json.errors.length > 0) {
     throw new Error(json.errors[0]?.message ?? "GraphQL error");
   }
-  return json.data?.discoverProfiles?.profiles ?? [];
+  return json.data?.dismissSuggestion?.ok ?? false;
 }
 
-export default function ExplorePage() {
-  const [sort, setSort] = useState<SortMode>("affinity");
-  const [filterVertical, setFilterVertical] = useState<string>("all");
-
+export default function SugestoesPage() {
   const [state, setState] = useState<LoadState>("loading");
-  const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
+  const [cards, setCards] = useState<SuggestionCard[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setState("loading");
       try {
-        const subverticais =
-          filterVertical === "all" ? null : [filterVertical];
-        const items = await fetchDiscovery(subverticais);
+        const items = await fetchDailySuggestions();
         if (cancelled) return;
         if (items.length === 0) {
-          setProfiles([]);
+          setCards([]);
           setState("empty");
           return;
         }
-        setProfiles(items);
+        setCards(items);
         setState("ready");
       } catch (err) {
         if (cancelled) return;
@@ -127,29 +151,42 @@ export default function ExplorePage() {
     return () => {
       cancelled = true;
     };
-  }, [filterVertical]);
+  }, []);
 
-  const list = useMemo(() => {
-    const sorted = [...profiles];
-    if (sort === "affinity") {
-      sorted.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    } else if (sort === "nearby") {
-      sorted.sort(
-        (a, b) =>
-          (a.distance ?? Number.POSITIVE_INFINITY) -
-          (b.distance ?? Number.POSITIVE_INFINITY),
-      );
+  const list = useMemo(
+    () => [...cards].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
+    [cards],
+  );
+
+  async function handleDismiss(card: SuggestionCard) {
+    setDismissing((prev) => ({ ...prev, [card.profileId]: true }));
+    try {
+      const ok = await dismissSuggestion(card.profileId, card.source);
+      if (ok) {
+        setCards((prev) => {
+          const next = prev.filter((c) => c.profileId !== card.profileId);
+          if (next.length === 0) setState("empty");
+          return next;
+        });
+      }
+    } catch {
+      // Falha ao dispensar nao derruba a lista — apenas libera o botao.
+    } finally {
+      setDismissing((prev) => {
+        const next = { ...prev };
+        delete next[card.profileId];
+        return next;
+      });
     }
-    return sorted;
-  }, [profiles, sort]);
+  }
 
   return (
     <main className="min-h-screen p-6 max-w-5xl mx-auto">
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Explorar</h1>
+          <h1 className="text-3xl font-bold">Conexoes sugeridas</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Sugestoes ranqueadas por afinidade real (discoverProfiles).
+            Sugestoes do dia com o motivo real (dailySuggestions).
           </p>
         </div>
         <Link
@@ -159,31 +196,6 @@ export default function ExplorePage() {
           Voltar deck
         </Link>
       </header>
-
-      <div className="flex flex-wrap gap-2 mb-4">
-        <select
-          aria-label="Ordenacao"
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
-          className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
-        >
-          <option value="affinity">Maior afinidade</option>
-          <option value="nearby">Mais proximos</option>
-        </select>
-        <select
-          aria-label="Vertical"
-          value={filterVertical}
-          onChange={(e) => setFilterVertical(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
-        >
-          <option value="all">Todas verticais</option>
-          {SUBVERTICALS.map((sv) => (
-            <option key={sv.slug} value={sv.slug}>
-              {sv.emoji} {sv.label}
-            </option>
-          ))}
-        </select>
-      </div>
 
       {/* Loading */}
       {state === "loading" && (
@@ -196,7 +208,7 @@ export default function ExplorePage() {
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
-              className="h-52 rounded-2xl border border-border bg-muted/30 animate-pulse"
+              className="h-56 rounded-2xl border border-border bg-muted/30 animate-pulse"
             />
           ))}
         </div>
@@ -225,7 +237,7 @@ export default function ExplorePage() {
       {state === "empty" && (
         <div className="text-center py-12 border border-border rounded-xl bg-muted/30">
           <p className="text-muted-foreground">
-            Nenhuma sugestao com esses filtros agora.
+            Nenhuma sugestao por agora. Volte mais tarde.
           </p>
         </div>
       )}
@@ -233,22 +245,23 @@ export default function ExplorePage() {
       {/* Ready */}
       {state === "ready" && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {list.map((p) => {
-            const affinity = Math.round((p.score ?? 0) * 100);
+          {list.map((c) => {
+            const affinity = Math.round((c.score ?? 0) * 100);
+            const isDismissing = !!dismissing[c.profileId];
             return (
               <article
-                key={p.id}
-                className="border border-border rounded-2xl p-5 hover:shadow-lg transition-shadow"
+                key={c.id}
+                className="border border-border rounded-2xl p-5 hover:shadow-lg transition-shadow flex flex-col"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h3 className="font-semibold">
-                      {p.displayName ?? "Perfil"}
-                      {p.age != null && `, ${p.age}`}
+                      {c.displayName ?? "Perfil"}
+                      {c.age != null && `, ${c.age}`}
                     </h3>
-                    {p.distance != null && (
+                    {c.distanceKm != null && (
                       <p className="text-xs text-muted-foreground">
-                        {Math.round(p.distance)} km
+                        {Math.round(c.distanceKm)} km
                       </p>
                     )}
                   </div>
@@ -258,10 +271,11 @@ export default function ExplorePage() {
                     </span>
                   )}
                 </div>
+
                 {/* REL-S9: motivo REAL da sugestao (so sinais capturados). */}
-                {p.reasons.length > 0 && (
+                {c.reasons.length > 0 && (
                   <ul className="flex flex-wrap gap-1.5 mb-3">
-                    {p.reasons.map((reason) => (
+                    {c.reasons.map((reason) => (
                       <li
                         key={reason.kind}
                         className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300"
@@ -281,27 +295,31 @@ export default function ExplorePage() {
                     ))}
                   </ul>
                 )}
-                {p.matchedInterests.length > 0 ? (
-                  <ul className="text-xs text-muted-foreground space-y-1 mb-4">
-                    {p.matchedInterests.slice(0, 4).map((r) => (
-                      <li key={r}>· {r}</li>
-                    ))}
-                  </ul>
-                ) : p.reasons.length === 0 && p.bio ? (
+
+                {c.reasons.length === 0 && c.bio ? (
                   <p className="text-xs text-muted-foreground mb-4 line-clamp-3">
-                    {p.bio}
+                    {c.bio}
                   </p>
                 ) : (
                   <div className="mb-4" />
                 )}
-                <div className="flex gap-2 items-center">
+
+                <div className="mt-auto flex gap-2">
                   <Link
-                    href={`/perfil/${p.id}`}
+                    href={`/perfil/${c.profileId}`}
                     className="flex-1 text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
                   >
                     Ver perfil
                   </Link>
-                  <SaveToFavoritesButton targetProfileId={p.id} />
+                  <button
+                    type="button"
+                    onClick={() => handleDismiss(c)}
+                    disabled={isDismissing}
+                    aria-label={`Dispensar sugestao ${c.displayName ?? "perfil"}`}
+                    className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+                  >
+                    {isDismissing ? "..." : "Dispensar"}
+                  </button>
                 </div>
               </article>
             );
