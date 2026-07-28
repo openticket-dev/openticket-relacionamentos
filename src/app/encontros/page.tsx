@@ -147,11 +147,19 @@ export default function EncontrosPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-white">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold">Encontros</h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Encontros e eventos parceiros em 3D. Cada estrela = um evento.
-          </p>
+        <header className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Encontros</h1>
+            <p className="text-sm text-zinc-400 mt-1">
+              Encontros e eventos parceiros em 3D. Cada estrela = um evento.
+            </p>
+          </div>
+          <Link
+            href="/encontros/seguranca"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-fuchsia-800 bg-fuchsia-950/40 text-sm font-semibold text-fuchsia-200 hover:bg-fuchsia-900/50 transition-colors"
+          >
+            Central de seguranca
+          </Link>
         </header>
 
         {/* Loading */}
