@@ -9,11 +9,19 @@
 //   Fluxo: prepareMessageUpload (mutation) -> PUT bytes direto no R2 ->
 //   sendMessage com attachmentUrl/Type/Mime. Render inline por tipo. O backend
 //   modera o anexo (attachmentStatus PENDING ate liberar).
+//
+// REL-G1 (2026-07-25) COMPRAR JUNTOS: a conversa ganha o card de encontro com
+//   ingresso pareado. A rota entrega o conversationId; o matchId (que a compra
+//   pareada exige) sai de `myConversations`, que ja expoe `matchId` por
+//   conversa. Encontros listados via `partnerEvents`, filtrados aos que estao
+//   bookados no OT (ticketingEventId != null). O bloco carrega SOZINHO: se
+//   falhar, o chat continua funcionando normalmente.
 
 "use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, use } from "react";
+import { ComprarJuntosCard } from "@/components/ComprarJuntosCard";
 
 const MESSAGES_QUERY = /* GraphQL */ `
   query MessagesInConversation($input: ListMessagesInput!) {
@@ -91,6 +99,31 @@ const PREPARE_UPLOAD_MUTATION = /* GraphQL */ `
       attachmentUrl
       attachmentType
       attachmentMime
+    }
+  }
+`;
+
+// REL-G1 — conversationId -> matchId (a compra pareada e por MATCH, nao por
+// conversa). `myConversations` ja devolve os dois ids; nao ha query dedicada e
+// nao vamos inventar uma no client.
+const MY_CONVERSATIONS_QUERY = /* GraphQL */ `
+  query MyConversationsForPaired {
+    myConversations {
+      id
+      matchId
+    }
+  }
+`;
+
+// REL-G1 — encontros curados; so os com ticketingEventId vendem pelo OT.
+const PARTNER_EVENTS_QUERY = /* GraphQL */ `
+  query PartnerEventsForPaired($input: PartnerEventsInput) {
+    partnerEvents(input: $input) {
+      id
+      title
+      startsAt
+      externalUrl
+      ticketingEventId
     }
   }
 `;
@@ -381,6 +414,10 @@ export default function ChatPage({
         </p>
       </div>
 
+      {/* REL-G1 — sugestao de encontro com ingresso pareado pro casal desta
+          conversa. Carrega sozinho e some quando nao ha nada real pra oferecer. */}
+      <ComprarJuntosSection conversationId={conversationId} />
+
       <section className="flex-1 p-4 space-y-3 overflow-y-auto min-h-[400px]">
         {/* Loading */}
         {state === "loading" &&
@@ -568,6 +605,94 @@ export default function ChatPage({
         </button>
       </form>
     </main>
+  );
+}
+
+/**
+ * REL-G1 — bloco "comprar juntos" dentro da conversa.
+ *
+ * Resolve o matchId da conversa (via `myConversations`) e lista os encontros
+ * que REALMENTE vendem ingresso pelo OT (`ticketingEventId != null`). Cada um
+ * vira um ComprarJuntosCard ja com o casal fixado — o usuario nao precisa
+ * escolher com quem vai, e a conversa que diz.
+ *
+ * Some por completo (render null) quando nao ha matchId ou nao ha encontro
+ * bookado: nada de card vazio prometendo o que nao existe. Erro aqui NAO
+ * derruba o chat — e um bloco lateral, carregado de forma independente.
+ */
+function ComprarJuntosSection({
+  conversationId,
+}: {
+  conversationId: string;
+}) {
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [events, setEvents] = useState<
+    Array<{
+      id: string;
+      title: string;
+      startsAt: string;
+      externalUrl: string | null;
+      ticketingEventId: string | null;
+    }>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [convRes, evtRes] = await Promise.all([
+          gql<{ myConversations: Array<{ id: string; matchId: string }> | null }>(
+            MY_CONVERSATIONS_QUERY,
+          ),
+          gql<{
+            partnerEvents: Array<{
+              id: string;
+              title: string;
+              startsAt: string;
+              externalUrl: string | null;
+              ticketingEventId: string | null;
+            }> | null;
+          }>(PARTNER_EVENTS_QUERY, { input: { limit: 20 } }),
+        ]);
+        if (cancelled) return;
+        const conv = (convRes.myConversations ?? []).find(
+          (c) => c.id === conversationId,
+        );
+        setMatchId(conv?.matchId ?? null);
+        setEvents(
+          (evtRes.partnerEvents ?? []).filter((e) => !!e.ticketingEventId),
+        );
+      } catch {
+        // Silencioso de proposito: sem encontro pareado o chat segue igual.
+        if (!cancelled) {
+          setMatchId(null);
+          setEvents([]);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  if (!matchId || events.length === 0) return null;
+
+  return (
+    <div className="px-4 py-3 border-b border-border space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        Sugestao de encontro — comprem os dois ingressos juntos
+      </p>
+      {events.slice(0, 3).map((e) => (
+        <ComprarJuntosCard
+          key={e.id}
+          partnerEventId={e.id}
+          partnerEventTitle={e.title}
+          externalUrl={e.externalUrl}
+          fixedMatchId={matchId}
+        />
+      ))}
+    </div>
   );
 }
 
