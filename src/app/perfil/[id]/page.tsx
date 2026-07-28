@@ -15,6 +15,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { HeartPulse3D } from "@/components/HeartPulse3D";
+import { SaveToFavoritesButton } from "@/components/SaveToFavoritesButton";
 
 const PROFILE_BY_ID_QUERY = /* GraphQL */ `
   query ProfileById($id: ID!) {
@@ -221,6 +222,10 @@ export default function ProfileByIdPage({
                 >
                   💬 Mandar mensagem
                 </Link>
+                <SaveToFavoritesButton
+                  targetProfileId={profile.id}
+                  className="min-w-[120px]"
+                />
                 <Link
                   href="/buscar"
                   className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 text-sm font-semibold transition-colors"

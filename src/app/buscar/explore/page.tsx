@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { SUBVERTICALS } from "@/lib/subverticals";
+import { SaveToFavoritesButton } from "@/components/SaveToFavoritesButton";
 
 const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
   query DiscoverProfilesExplore($filters: DiscoveryFiltersInput) {
@@ -254,13 +255,14 @@ export default function ExplorePage() {
                 ) : (
                   <div className="mb-4" />
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Link
                     href={`/perfil/${p.id}`}
                     className="flex-1 text-center px-3 py-2 text-sm rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700"
                   >
                     Ver perfil
                   </Link>
+                  <SaveToFavoritesButton targetProfileId={p.id} />
                 </div>
               </article>
             );
