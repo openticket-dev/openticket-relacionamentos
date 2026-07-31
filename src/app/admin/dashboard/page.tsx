@@ -287,6 +287,23 @@ export default function AdminDashboardPage() {
             Usuários banidos com motivo e duração
           </p>
         </Link>
+
+        {/* REL-G2 — configurador dos pesos do algoritmo de match (backend real:
+            matchAlgorithmConfig / saveMatchAlgorithmConfig). O link nasceu no hub
+            /admin, que o REL-S4 transformou em redirect pra /comunidade; mora aqui
+            pra rota não ficar órfã. */}
+        <Link
+          href="/admin/algoritmo"
+          className="p-6 rounded-lg border border-border hover:border-fuchsia-500 transition-colors group"
+        >
+          <p className="text-2xl mb-2">🎚️</p>
+          <h3 className="font-semibold group-hover:text-fuchsia-600">
+            Algoritmo de match
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Pesos por fator do ranking de compatibilidade
+          </p>
+        </Link>
       </section>
 
       <section>
