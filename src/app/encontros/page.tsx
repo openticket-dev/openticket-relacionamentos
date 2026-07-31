@@ -28,6 +28,9 @@ import {
   type EncontroPoint,
 } from "@/components/SparklesConstellation3D";
 import { ComprarJuntosCard } from "@/components/ComprarJuntosCard";
+// REL-G5 — QR do convite pareado (check-in na porta). Reusa a infra de QR
+// existente (StyledQR / qr-code-styling), zero dependencia nova.
+import { StyledQR } from "@/components/qr-styles/StyledQR";
 
 // Contrato (introspection PartnerEvent): { id title kind description city state
 //   startsAt endsAt partnerName imageUrl externalUrl tags ... }
@@ -95,6 +98,52 @@ async function fetchPartnerEvents(limit: number): Promise<PartnerEvent[]> {
   return json.data?.partnerEvents ?? [];
 }
 
+// REL-G5 — gera o convite pareado (QR token) do caller pro evento.
+// Backend: generatePairedInviteQr (subgraph relacionamentos), profileId do JWT.
+const GENERATE_INVITE_QR_MUTATION = /* GraphQL */ `
+  mutation GeneratePairedInviteQr($input: GeneratePairedInviteQrInput!) {
+    generatePairedInviteQr(input: $input) {
+      ok
+      persisted
+      qrPayload
+      pendingReason
+    }
+  }
+`;
+
+interface GenerateInviteQrResult {
+  ok: boolean;
+  persisted: boolean;
+  qrPayload: string | null;
+  pendingReason: string | null;
+}
+
+async function generateInviteQr(eventId: string): Promise<GenerateInviteQrResult> {
+  const res = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: GENERATE_INVITE_QR_MUTATION,
+      variables: { input: { eventId } },
+    }),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    data?: { generatePairedInviteQr: GenerateInviteQrResult | null };
+    errors?: { message: string }[];
+  };
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  }
+  if (!json.data?.generatePairedInviteQr) {
+    throw new Error("Resposta vazia do gateway");
+  }
+  return json.data.generatePairedInviteQr;
+}
+
 const KIND_LABEL: Record<PartnerEventKind, string> = {
   SPEED_DATING: "Speed dating",
   RETREAT: "Retiro",
@@ -119,6 +168,39 @@ export default function EncontrosPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [events, setEvents] = useState<PartnerEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // REL-G5 — convite pareado: QR de entrada por evento.
+  const [inviteBusyFor, setInviteBusyFor] = useState<string | null>(null);
+  const [inviteModal, setInviteModal] = useState<{
+    eventTitle: string;
+    qrPayload: string;
+  } | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  async function onGenerateInvite(event: PartnerEvent) {
+    setInviteError(null);
+    setInviteBusyFor(event.id);
+    try {
+      const res = await generateInviteQr(event.id);
+      if (!res.ok || !res.qrPayload) {
+        setInviteError(
+          res.pendingReason ===
+            "PARTNER_EVENT_CHECKIN_TABLE_PENDING_MIGRATION"
+            ? "O check-in deste ambiente ainda nao esta ativo (migration pendente)."
+            : (res.pendingReason ?? "Nao foi possivel gerar seu QR de entrada."),
+        );
+        return;
+      }
+      setInviteModal({ eventTitle: event.title, qrPayload: res.qrPayload });
+    } catch (err) {
+      setInviteError(
+        err instanceof Error
+          ? err.message
+          : "Nao foi possivel gerar seu QR de entrada.",
+      );
+    } finally {
+      setInviteBusyFor(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -283,6 +365,15 @@ export default function EncontrosPage() {
                           Detalhes
                         </a>
                       )}
+                      {/* REL-G5 — QR do convite pareado pro check-in na porta. */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateInvite(e)}
+                        disabled={inviteBusyFor === e.id}
+                        className="text-xs rounded-lg border border-fuchsia-800 bg-fuchsia-950/40 hover:bg-fuchsia-900/40 disabled:opacity-50 px-2.5 py-1.5 font-semibold text-fuchsia-200"
+                      >
+                        {inviteBusyFor === e.id ? "Gerando…" : "QR de entrada"}
+                      </button>
                     </div>
                   </div>
 
@@ -298,6 +389,56 @@ export default function EncontrosPage() {
                 </li>
               ))}
             </ul>
+
+            {inviteError && (
+              <p
+                className="text-xs text-rose-300 rounded-lg border border-rose-900 bg-rose-950/30 p-3"
+                role="alert"
+              >
+                {inviteError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* REL-G5 — modal do QR de entrada (convite pareado) */}
+        {inviteModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`QR de entrada — ${inviteModal.eventTitle}`}
+            onClick={() => setInviteModal(null)}
+          >
+            <div
+              className="rounded-2xl border border-neutral-800 bg-neutral-950 p-6 max-w-sm w-full text-center"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <p className="text-sm text-neutral-400 mb-1">Seu QR de entrada</p>
+              <p className="font-semibold mb-4 truncate">
+                {inviteModal.eventTitle}
+              </p>
+              <div className="flex justify-center mb-4">
+                <StyledQR
+                  value={inviteModal.qrPayload}
+                  variant="midnightGold"
+                  topText="OPENTICKET"
+                  bottomText="CHECK-IN"
+                  size={280}
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mb-4">
+                Mostre este QR na porta do evento. Sua mesa e atribuida por
+                compatibilidade DNA no check-in.
+              </p>
+              <button
+                type="button"
+                onClick={() => setInviteModal(null)}
+                className="inline-block px-5 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 text-sm font-semibold"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         )}
       </div>
