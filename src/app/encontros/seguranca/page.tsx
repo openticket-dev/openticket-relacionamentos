@@ -30,6 +30,7 @@ import {
   Lightbulb,
   Phone,
   CheckCircle2,
+  AlertTriangle,
   Loader2,
 } from "lucide-react";
 import { gqlRequest } from "@/lib/gql-client";
@@ -90,6 +91,9 @@ const TRIGGER_PANIC_MUTATION = /* GraphQL */ `
       ok
       persisted
       panicEventId
+      contactsRegistered
+      contactsNotified
+      deliveryFailed
       pendingReason
     }
   }
@@ -163,6 +167,11 @@ interface PanicResult {
   ok: boolean;
   persisted: boolean;
   panicEventId: string | null;
+  /** Contatos de emergencia ativos no momento do disparo. */
+  contactsRegistered: number | null;
+  /** Contatos com ENTREGA confirmada. So isso pinta o check verde (F3). */
+  contactsNotified: number | null;
+  deliveryFailed: number | null;
   pendingReason: string | null;
 }
 
@@ -413,14 +422,48 @@ export default function SegurancaEncontrosPage() {
               </>
             )}
           </button>
-          {panicResult && (
-            <p className="text-sm text-emerald-300 mt-3 flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4" />
-              {panicResult.persisted
-                ? "Alerta registrado. Se voce cadastrou contatos de emergencia, eles serao acionados."
-                : "Alerta recebido."}
-            </p>
-          )}
+          {panicResult &&
+            /* F3 (2026-08-21): o check verde exige ENTREGA confirmada.
+               Antes ele aparecia sempre, com um "serao acionados" no futuro do
+               preterito — e contactsNotified vinha de um count() de contatos
+               CADASTRADOS, entao a tela dizia "acionados" sem provider de SMS
+               nenhum configurado. */
+            ((panicResult.contactsNotified ?? 0) > 0 ? (
+              <p className="text-sm text-emerald-300 mt-3 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" />
+                {panicResult.contactsNotified} contato(s) acionado(s) com
+                confirmacao de envio.
+                {(panicResult.deliveryFailed ?? 0) > 0
+                  ? ` ${panicResult.deliveryFailed} falhou(ram).`
+                  : ""}
+              </p>
+            ) : (
+              <p
+                className="text-sm text-amber-300 mt-3 flex items-start gap-1.5"
+                role="alert"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  Alerta registrado, mas{" "}
+                  <strong>nenhum contato foi acionado</strong>.
+                  {(panicResult.contactsRegistered ?? 0) === 0 ? (
+                    <>
+                      {" "}
+                      Voce nao tem contato de emergencia cadastrado —{" "}
+                      <Link
+                        href="/perfil/contatos-emergencia"
+                        className="text-fuchsia-300 underline"
+                      >
+                        cadastre agora
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    " O envio falhou. Em risco imediato, ligue 190."
+                  )}
+                </span>
+              </p>
+            ))}
           {panicError && (
             <p className="text-sm text-rose-300 mt-3" role="alert">
               {panicError}
@@ -458,7 +501,7 @@ export default function SegurancaEncontrosPage() {
                   <>
                     {" "}
                     <Link
-                      href="/perfil/editar"
+                      href="/perfil/contatos-emergencia"
                       className="text-fuchsia-300 underline"
                     >
                       Cadastre contatos
