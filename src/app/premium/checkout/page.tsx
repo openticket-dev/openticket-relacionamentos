@@ -190,19 +190,27 @@ function CheckoutContent() {
               />
               <span>
                 Li e aceito os{" "}
-                <Link
-                  href="/landing/termos"
+                {/*
+                  Termos e politica sao documentos UNICOS da OpenTicket e vivem
+                  no shell (openticket-shell src/app/termos/page.tsx e
+                  src/app/privacidade/page.tsx). <a> puro de proposito: next/link
+                  prefixaria o basePath /relacionamentos e cairia em 404, que era
+                  exatamente o bug — os dois destinos antigos, sob o prefixo
+                  "landing", nunca existiram neste app (so ha landing/page.tsx).
+                */}
+                <a
+                  href="/termos"
                   className="text-fuchsia-600 hover:text-fuchsia-700 underline"
                 >
                   termos de uso
-                </Link>{" "}
+                </a>{" "}
                 e a{" "}
-                <Link
-                  href="/landing/privacidade"
+                <a
+                  href="/privacidade"
                   className="text-fuchsia-600 hover:text-fuchsia-700 underline"
                 >
                   politica de privacidade
-                </Link>
+                </a>
                 . Entendo que posso cancelar a qualquer momento.
               </span>
             </label>
