@@ -49,20 +49,6 @@ function synthesizeJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.${signature}`;
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const json = Buffer.from(
-      parts[1].replace(/-/g, "+").replace(/_/g, "/"),
-      "base64",
-    ).toString("utf-8");
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Tries to resolve a NextAuth session by calling the shell's
  * `/api/auth/session` endpoint with the same cookies the request brought in.
@@ -94,6 +80,110 @@ async function fetchNextAuthSession(
   }
 }
 
+const MY_COMPANIES_QUERY = `
+  query MyCompaniesProxy($profileId: String!) {
+    myCompanies(profileId: $profileId) {
+      companyId
+    }
+  }
+`;
+
+/**
+ * FIX-44 (port do openticket-shell) — cache do VINCULO usuario<->empresa,
+ * chaveado por `profileId::companyId`. Sem ele cada request company-scoped
+ * pagaria +1 round-trip ao gateway.
+ */
+type ResolvedMembership = { belongs: boolean; resolvedAt: number };
+const companyMembershipCache = new Map<string, ResolvedMembership>();
+const COMPANY_MEMBERSHIP_TTL_MS = 5 * 60 * 1000; // 5 min
+
+/**
+ * O usuario tem vinculo ATIVO com esta empresa?
+ *
+ * Fonte de verdade: o resolver `myCompanies` do gateway — identity-bound (ele
+ * valida `sub == profileId`, api-core `core.resolver.ts:170-174`) e so devolve
+ * as empresas onde o perfil tem vinculo. Logo a resposta nao pode ser forjada
+ * pelo cliente.
+ *
+ * Degradacao: `myCompanies` fora do ar NAO pode virar "pertence". Em erro de
+ * rede / nao-200 / resposta sem `data` devolvemos o ULTIMO valor conhecido do
+ * cache quando existe (nao derruba quem ja estava navegando) e, so na ausencia
+ * dele, `false` -> o chamador cai pro companyId da sessao (ou null). Falhar
+ * desse jeito custa tela vazia; falhar pro outro lado custa tenant alheio.
+ *
+ * So o veredito AUTORITATIVO (veio `data.myCompanies`) entra no cache — assim a
+ * proxima request re-tenta em vez de congelar um `false` de indisponibilidade.
+ */
+async function userBelongsToCompany(
+  profileId: string,
+  companyId: string,
+  identityAuthHeader: string,
+): Promise<boolean> {
+  const cacheKey = `${profileId}::${companyId}`;
+  const cached = companyMembershipCache.get(cacheKey);
+  if (cached && Date.now() - cached.resolvedAt < COMPANY_MEMBERSHIP_TTL_MS) {
+    return cached.belongs;
+  }
+  try {
+    const res = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: identityAuthHeader,
+      },
+      body: JSON.stringify({
+        query: MY_COMPANIES_QUERY,
+        variables: { profileId },
+      }),
+    });
+    if (!res.ok) return cached?.belongs ?? false;
+    const json = (await res.json()) as {
+      data?: { myCompanies?: Array<{ companyId: string }> };
+    };
+    const companies = json?.data?.myCompanies;
+    // Erro GraphQL / data nula = indisponibilidade, NAO "nao pertence".
+    if (!Array.isArray(companies)) return cached?.belongs ?? false;
+    const belongs = companies.some((c) => c?.companyId === companyId);
+    companyMembershipCache.set(cacheKey, { belongs, resolvedAt: Date.now() });
+    return belongs;
+  } catch {
+    return cached?.belongs ?? false;
+  }
+}
+
+/**
+ * Resolve o companyId que entra no JWT que ESTE servidor assina.
+ *
+ * Precedencia preservada do codigo anterior: o escopo derivado no servidor
+ * (`session.companyId`, vindo do callback de sessao do NextAuth no shell) vence;
+ * o cookie so entra como FALLBACK — e agora so quando `myCompanies` comprova o
+ * vinculo. Sem vinculo -> null, exatamente o estado de quem nunca passou pelo
+ * picker de empresa.
+ */
+async function resolveEffectiveCompanyId(args: {
+  sessionCompanyId: string | null;
+  cookieCompanyId: string | null;
+  profileId: string | null;
+  identityAuthHeader: () => string | null;
+}): Promise<string | null> {
+  const { sessionCompanyId, cookieCompanyId, profileId } = args;
+  if (sessionCompanyId) return sessionCompanyId;
+  if (!cookieCompanyId || !profileId) return null;
+  const identityAuth = args.identityAuthHeader();
+  if (!identityAuth) return null;
+  const belongs = await userBelongsToCompany(
+    profileId,
+    cookieCompanyId,
+    identityAuth,
+  );
+  if (belongs) return cookieCompanyId;
+  console.warn(
+    "[api/graphql] FIX-44: cookie ot_company_id rejeitado (sem vinculo)",
+    { profileId, cookieCompanyId },
+  );
+  return null;
+}
+
 /**
  * POST /api/graphql
  *
@@ -104,9 +194,12 @@ async function fetchNextAuthSession(
  * Apollo client / fetch only carries the NextAuth session cookie, so without
  * this proxy the entire vertical returns DOWNSTREAM_SERVICE_ERROR.
  *
- * Auth strategy mirrors the openticket-eventos proxy:
- *  - Tier 1: `ot_access_token` httpOnly cookie set on login → synth JWT.
- *  - Tier 2: NextAuth session from the shell (`/api/auth/session`) → synth JWT.
+ * Auth strategy (pos FIX-44 — so identidade derivada no SERVIDOR e assinada):
+ *  - Tier 1: sessao NextAuth do shell (`/api/auth/session`) -> synth JWT, com o
+ *    cookie `ot_company_id` aceito somente sob vinculo comprovado em
+ *    `myCompanies`.
+ *  - Tier 2: `ot_access_token` -> passthrough CRU (nao e verificavel aqui, e
+ *    nenhum servidor da frota o emite; quem valida assinatura e o backend).
  *  - Tier 3: passthrough of an Authorization header brought by the client.
  *
  * NOTE: this route handler takes precedence over the `/api/:path*` rewrite in
@@ -120,60 +213,94 @@ export async function POST(req: NextRequest) {
 
     let authHeader: string | null = null;
 
-    // Tenant claim from the client-readable cookie set by /negocios after a
-    // company pick. This is the active-company shim (mirrors openticket-shell
-    // and the varejo useCompanyId fix PR #55):
+    // FIX-44 (port do openticket-shell a630ab82) — o cookie `ot_company_id` e
+    // PEDIDO, nao FATO.
     //
-    // A SUPER_ADMIN (CEO / OpenTicket staff) has `companyId === null` in the
-    // NextAuth session and in the `ot_access_token` JWT, because their scope is
-    // global, not tied to one company. They pick the active company in
-    // /negocios, which writes the non-httpOnly `ot_company_id` cookie. Without
-    // reading that cookie here, the synthesized JWT carried `companyId: null`
-    // and every company-scoped query returned 0 rows / "sem empresa vinculada".
+    // Ele e escrito CLIENT-SIDE (`src/app/empresas/page.tsx:181` e `:262`, via
+    // `document.cookie`) e nao e httpOnly. Ate aqui ele entrava direto no
+    // payload do JWT que ESTE servidor assina com JWT_SECRET — ou seja, o
+    // backend recebia uma AFIRMACAO de tenant assinada por nos com base em algo
+    // que o atacante digitou no devtools, e todo `assertCompanyAccess(user, X)`
+    // passava porque `user.companyId` JA era X.
     //
-    // SECURITY (multi-tenant): the cookie only ever takes effect as a FALLBACK
-    // when the token/session has no companyId of its own (i.e. SUPER_ADMIN). A
-    // regular tenant user keeps their session companyId untouched — the cookie
-    // never overrides a real session scope, so no cross-tenant leakage.
+    // Agora ele so e honrado quando `myCompanies` (identity-bound no gateway)
+    // lista aquela empresa pro perfil da sessao — ver resolveEffectiveCompanyId.
+    //
+    // NAO emitimos 403 de proposito: este BFF e nao-autoritativo por desenho;
+    // quem nega acesso e o backend. O que ele nao pode mais fazer e ASSINAR a
+    // mentira.
     const cookieCompanyId = cookieStore.get("ot_company_id")?.value || null;
 
-    // Tier 1: own auth cookie set by the shell on the shared domain.
+    // Tier 1 (FIX-44): sessao NextAuth do shell — a UNICA identidade derivada
+    // no SERVIDOR, e por isso a unica que este proxy assina. Passou a vir antes
+    // do `ot_access_token` justamente porque aquele cookie e forjavel: com a
+    // ordem antiga, plantar um `ot_access_token` qualquer bastava pra desviar a
+    // request da sessao real.
+    {
+      const session = await fetchNextAuthSession(req);
+      if (session && (session.email || session.id)) {
+        const profileId = (session.id as string) || null;
+        const sub = profileId || (session.email as string);
+        const role = (session.role as string) || "USER";
+        // JWT SO-IDENTIDADE (companyId null) pra autenticar a chamada interna
+        // deste proxy ao gateway. Memoizado: no maximo 1 assinatura extra por
+        // request, e so quando ha cookie a verificar.
+        let identityJwtMemo: string | null = null;
+        const identityAuthHeader = (): string | null => {
+          if (!profileId) return null;
+          try {
+            if (!identityJwtMemo) {
+              identityJwtMemo = synthesizeJwt({
+                sub: profileId,
+                email: session.email ?? null,
+                name: session.name ?? null,
+                role,
+                companyId: null,
+              });
+            }
+            return `Bearer ${identityJwtMemo}`;
+          } catch {
+            // synthesizeJwt e fail-closed sem JWT_SECRET.
+            return null;
+          }
+        };
+        const companyId = await resolveEffectiveCompanyId({
+          sessionCompanyId: (session.companyId as string) || null,
+          cookieCompanyId,
+          profileId,
+          identityAuthHeader,
+        });
+        const synth = synthesizeJwt({
+          sub,
+          email: session.email ?? null,
+          name: session.name ?? null,
+          role,
+          companyId,
+        });
+        authHeader = `Bearer ${synth}`;
+      }
+    }
+
+    // Tier 2: cookie de acesso legado, so quando nao ha sessao.
     const otToken =
       cookieStore.get("ot_access_token")?.value ||
       cookieStore.get("ot_session")?.value ||
       cookieStore.get("ot_token")?.value;
 
-    if (otToken) {
-      const decoded = decodeJwtPayload(otToken);
-      if (decoded?.email) {
-        const synth = synthesizeJwt({
-          sub: (decoded.sub as string) || (decoded.email as string),
-          email: decoded.email,
-          name: decoded.name || null,
-          role: decoded.role || "USER",
-          companyId: (decoded.companyId as string) || cookieCompanyId,
-        });
-        authHeader = `Bearer ${synth}`;
-      } else {
-        // Token isn't a decodable JWT (could be opaque) — pass through raw.
-        authHeader = `Bearer ${otToken}`;
-      }
-    }
-
-    // Tier 2: NextAuth session from the shell (login flow when the user logged
-    // in via /login and there is no ot_access_token).
-    if (!authHeader) {
-      const session = await fetchNextAuthSession(req);
-      if (session && (session.email || session.id)) {
-        const synth = synthesizeJwt({
-          sub: (session.id as string) || (session.email as string),
-          email: session.email ?? null,
-          name: session.name ?? null,
-          role: (session.role as string) || "USER",
-          companyId: (session.companyId as string) || cookieCompanyId,
-        });
-        authHeader = `Bearer ${synth}`;
-      }
+    if (!authHeader && otToken) {
+      // FIX-44 / SEC-01: `ot_access_token` chega SEM verificacao de assinatura —
+      // e nenhum servidor da frota o emite (0 sites de escrita medidos em
+      // openticket-relacionamentos, openticket-eventos e openticket-shell em
+      // 2026-08-23), entao todo valor presente aqui foi posto pelo cliente.
+      // Sintetizar um JWT assinado a partir dele transformava este proxy num
+      // signing oracle: `sub`, `role` e `companyId` forjados no devtools saiam
+      // daqui assinados com JWT_SECRET e o backend confiava.
+      //
+      // Passa CRU: quem valida assinatura e o GqlAuthGuard do gateway. Token
+      // legitimo (se algum dia voltar a existir) segue funcionando; token
+      // forjado morre no backend em vez de ser abencoado aqui. So a identidade
+      // derivada no servidor (sessao NextAuth, Tier 1) volta a ser assinada.
+      authHeader = `Bearer ${otToken}`;
     }
 
     // Tier 3: passthrough — clients that bring their own JWT.
