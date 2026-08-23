@@ -3,10 +3,20 @@
  *
  * Card 02.3 "Encontros com Seguranca". Reune num so lugar os recursos de
  * seguranca do usuario:
- *   - Botao de panico (ja real: mutation triggerPanic).
+ *   - Canais publicos de emergencia (190/180/100) hardcoded no topo do painel
+ *     de panico — a UNICA coisa desta tela que aciona socorro de verdade.
+ *   - Botao de panico (mutation triggerPanic). ATENCAO: ele so GRAVA um
+ *     PanicEvent (status PENDING). Nao notifica contato, nao aciona policia:
+ *     `panicEvent` e criado em 2 lugares no backend e lido por NENHUM
+ *     dispatcher, e `contactsNotified` e um COUNT de contatos cadastrados, nao
+ *     de contatos avisados (openticket-api
+ *     apps/relacionamentos/src/resolvers/user-perfil-extras.resolver.ts:145-173).
+ *     A copy tem que dizer isso — botao de panico que mente custa vida.
  *   - Compartilhe sua localizacao ao vivo durante o encontro (startLocationShare
- *     / updateLocationShare / stopLocationShare), ligado aos contatos de
- *     emergencia ja wired (contactsNotified).
+ *     / updateLocationShare / stopLocationShare). Mesma ressalva: o resolver so
+ *     guarda a sessao e faz um COUNT dos contatos — `contactsNotified` e um
+ *     snapshot de quantos existem, ninguem recebe aviso (openticket-api
+ *     apps/relacionamentos/src/resolvers/safety-center.resolver.ts:200,219).
  *   - Dicas de seguranca (query safetyTips — PREPARACAO/DURANTE/ONLINE).
  *   - Locais seguros (query safePlaces).
  *   - Central de ajuda (query safetyTips — categoria AJUDA, com CTA tel:/link).
@@ -200,6 +210,28 @@ const TIP_GROUP_LABEL: Record<string, string> = {
   DURANTE: "Durante o encontro",
   ONLINE: "Seguranca online",
 };
+
+/**
+ * Canais publicos de emergencia — HARDCODED de proposito.
+ *
+ * Nao vem de safetyTips: aquela query depende do seed do backend ter rodado, e
+ * sem seed a secao "Central de ajuda" cai em EmptyBox. Numero publico e
+ * universal de emergencia nao e mock — e a unica coisa desta tela que
+ * realmente aciona socorro, entao tem que aparecer sempre, acima do botao.
+ */
+const EMERGENCIA_PUBLICA: ReadonlyArray<{
+  numero: string;
+  label: string;
+  descricao: string;
+}> = [
+  { numero: "190", label: "Ligar 190", descricao: "Policia Militar" },
+  {
+    numero: "180",
+    label: "Ligar 180",
+    descricao: "Central de Atendimento a Mulher",
+  },
+  { numero: "100", label: "Ligar 100", descricao: "Direitos Humanos" },
+];
 
 // Tenta obter a geolocalizacao do browser (opcional, best-effort).
 function getCoords(): Promise<{ lat: number; lng: number } | null> {
@@ -402,9 +434,34 @@ export default function SegurancaEncontrosPage() {
             <ShieldAlert className="h-5 w-5 text-rose-400" />
             Emergencia
           </h2>
+          {/* (A) Autoridade publica — sempre visivel, ACIMA do botao. */}
+          <div className="mt-3 mb-4 rounded-xl border border-rose-700 bg-rose-900/40 p-4">
+            <p className="text-sm font-semibold text-rose-100">
+              Em risco imediato, ligue para a emergencia publica.
+            </p>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {EMERGENCIA_PUBLICA.map((c) => (
+                <li key={c.numero}>
+                  <a
+                    href={`tel:${c.numero}`}
+                    aria-label={`${c.label} — ${c.descricao}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-rose-700 text-sm font-bold hover:bg-rose-50"
+                  >
+                    <Phone className="h-4 w-4" /> {c.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-rose-200/80 mt-2">
+              190 Policia Militar · 180 Central de Atendimento a Mulher · 100
+              Direitos Humanos.
+            </p>
+          </div>
+          {/* (B) Copy honesta: o botao registra, nao socorre. */}
           <p className="text-sm text-rose-200/80 mt-1 mb-4">
-            Aciona seus contatos de emergencia e registra o alerta com sua
-            localizacao. Use so em situacao de risco real.
+            Registra um alerta com sua localizacao para a moderacao. Nao aciona
+            a policia e nao envia mensagem para ninguem. Em risco imediato,
+            ligue 190.
           </p>
           <button
             type="button"
@@ -423,11 +480,19 @@ export default function SegurancaEncontrosPage() {
             )}
           </button>
           {panicResult &&
-            /* F3 (2026-08-21): o check verde exige ENTREGA confirmada.
-               Antes ele aparecia sempre, com um "serao acionados" no futuro do
-               preterito — e contactsNotified vinha de um count() de contatos
-               CADASTRADOS, entao a tela dizia "acionados" sem provider de SMS
-               nenhum configurado. */
+            /* F3 (2026-08-21) + decisao #36 do CEO (2026-08-23).
+               O check verde exige ENTREGA confirmada. Antes ele aparecia
+               sempre, com um "serao acionados" no futuro do preterito — e
+               contactsNotified vinha de um count() de contatos CADASTRADOS,
+               entao a tela dizia "acionados" sem provider de SMS configurado.
+               Alarme constante e alarme ignorado; a tela tem que dizer a
+               verdade sobre o estado.
+
+               Do lado da staging foram PRESERVADAS duas coisas que so ela
+               tinha e que numa tela de risco de vida nao se perde: a distincao
+               `persisted` (alerta gravado x recebido-e-nao-gravado, com o
+               motivo) e o BOTAO tel:190 — em emergencia, botao discavel vale
+               mais que a palavra "ligue 190" no meio do texto. */
             ((panicResult.contactsNotified ?? 0) > 0 ? (
               <p className="text-sm text-emerald-300 mt-3 flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4" />
@@ -438,31 +503,46 @@ export default function SegurancaEncontrosPage() {
                   : ""}
               </p>
             ) : (
-              <p
-                className="text-sm text-amber-300 mt-3 flex items-start gap-1.5"
+              <div
+                className="mt-3 rounded-xl border border-amber-700 bg-amber-950/30 p-3"
                 role="alert"
               >
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>
-                  Alerta registrado, mas{" "}
-                  <strong>nenhum contato foi acionado</strong>.
-                  {(panicResult.contactsRegistered ?? 0) === 0 ? (
-                    <>
-                      {" "}
-                      Voce nao tem contato de emergencia cadastrado —{" "}
-                      <Link
-                        href="/perfil/contatos-emergencia"
-                        className="text-fuchsia-300 underline"
-                      >
-                        cadastre agora
-                      </Link>
-                      .
-                    </>
-                  ) : (
-                    " O envio falhou. Em risco imediato, ligue 190."
-                  )}
-                </span>
-              </p>
+                <p className="text-sm text-amber-200 flex items-start gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    {panicResult.persisted
+                      ? "Alerta registrado"
+                      : "Alerta recebido, mas ainda nao registrado"}
+                    , mas <strong>nenhum contato foi acionado</strong>.
+                    {(panicResult.contactsRegistered ?? 0) === 0 ? (
+                      <>
+                        {" "}
+                        Voce nao tem contato de emergencia cadastrado —{" "}
+                        <Link
+                          href="/perfil/contatos-emergencia"
+                          className="text-fuchsia-300 underline"
+                        >
+                          cadastre agora
+                        </Link>
+                        .
+                      </>
+                    ) : (
+                      " O envio falhou."
+                    )}
+                  </span>
+                </p>
+                {!panicResult.persisted && panicResult.pendingReason && (
+                  <p className="text-xs text-amber-300/80 mt-1.5">
+                    Motivo: {panicResult.pendingReason}
+                  </p>
+                )}
+                <a
+                  href="tel:190"
+                  className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold"
+                >
+                  <Phone className="h-4 w-4" /> Ligar 190 agora
+                </a>
+              </div>
             ))}
           {panicError && (
             <p className="text-sm text-rose-300 mt-3" role="alert">
@@ -480,9 +560,13 @@ export default function SegurancaEncontrosPage() {
             <Navigation className="h-5 w-5 text-fuchsia-400" />
             Compartilhe sua localizacao
           </h2>
+          {/* EXTRA-1: mesma mentira do painel de panico. O backend so guarda a
+              sessao e conta os contatos (safety-center.resolver.ts:200,219) —
+              ninguem e avisado. */}
           <p className="text-sm text-zinc-400 mt-1 mb-4">
-            Durante o encontro, mantenha uma sessao de localizacao ao vivo. Seus
-            contatos de emergencia sabem onde voce esta.
+            Durante o encontro, guarda sua localizacao numa sessao ao vivo, no
+            escopo dos seus contatos de emergencia. Nao envia aviso automatico
+            para eles — quem precisa saber, avise por conta propria.
           </p>
 
           {shareActive ? (
@@ -496,7 +580,7 @@ export default function SegurancaEncontrosPage() {
               </p>
               <p className="text-xs text-zinc-400 mt-2">
                 {session?.contactsNotified ?? 0} contato(s) de emergencia no
-                escopo desta sessao.
+                escopo desta sessao — nenhum foi avisado automaticamente.
                 {session?.contactsNotified === 0 && (
                   <>
                     {" "}

@@ -23,7 +23,13 @@ jest.mock("next/navigation", () => ({
 }));
 
 // scrollIntoView nao existe no jsdom; o chat chama em cada mensagem nova.
-if (!(HTMLElement.prototype as any).scrollIntoView) {
+// O `typeof` guarda os testes com `@jest-environment node` (route handlers do
+// BFF), onde `HTMLElement` simplesmente nao existe e o acesso direto derrubava
+// o setup inteiro com ReferenceError antes do primeiro caso rodar.
+if (
+  typeof HTMLElement !== "undefined" &&
+  !(HTMLElement.prototype as any).scrollIntoView
+) {
   (HTMLElement.prototype as any).scrollIntoView = jest.fn();
 }
 
