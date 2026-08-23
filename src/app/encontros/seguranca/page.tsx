@@ -39,6 +39,7 @@ import {
   LifeBuoy,
   Lightbulb,
   Phone,
+  CheckCircle2,
   AlertTriangle,
   Loader2,
 } from "lucide-react";
@@ -100,6 +101,9 @@ const TRIGGER_PANIC_MUTATION = /* GraphQL */ `
       ok
       persisted
       panicEventId
+      contactsRegistered
+      contactsNotified
+      deliveryFailed
       pendingReason
     }
   }
@@ -173,6 +177,11 @@ interface PanicResult {
   ok: boolean;
   persisted: boolean;
   panicEventId: string | null;
+  /** Contatos de emergencia ativos no momento do disparo. */
+  contactsRegistered: number | null;
+  /** Contatos com ENTREGA confirmada. So isso pinta o check verde (F3). */
+  contactsNotified: number | null;
+  deliveryFailed: number | null;
   pendingReason: string | null;
 }
 
@@ -470,37 +479,71 @@ export default function SegurancaEncontrosPage() {
               </>
             )}
           </button>
-          {/* (C) Sem verde de "deu certo": o alerta so foi gravado. */}
-          {panicResult && (
-            <div
-              className="mt-3 rounded-xl border border-amber-700 bg-amber-950/30 p-3"
-              role="status"
-            >
-              <p className="text-sm text-amber-200 flex items-start gap-1.5">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>
-                  {panicResult.persisted
-                    ? `Alerta registrado${
-                        panicResult.panicEventId
-                          ? ` (${panicResult.panicEventId})`
-                          : ""
-                      }. Nenhum contato foi notificado automaticamente. Ligue 190.`
-                    : "Alerta recebido, mas ainda nao registrado. Nenhum contato foi notificado automaticamente. Ligue 190."}
-                </span>
+          {panicResult &&
+            /* F3 (2026-08-21) + decisao #36 do CEO (2026-08-23).
+               O check verde exige ENTREGA confirmada. Antes ele aparecia
+               sempre, com um "serao acionados" no futuro do preterito — e
+               contactsNotified vinha de um count() de contatos CADASTRADOS,
+               entao a tela dizia "acionados" sem provider de SMS configurado.
+               Alarme constante e alarme ignorado; a tela tem que dizer a
+               verdade sobre o estado.
+
+               Do lado da staging foram PRESERVADAS duas coisas que so ela
+               tinha e que numa tela de risco de vida nao se perde: a distincao
+               `persisted` (alerta gravado x recebido-e-nao-gravado, com o
+               motivo) e o BOTAO tel:190 — em emergencia, botao discavel vale
+               mais que a palavra "ligue 190" no meio do texto. */
+            ((panicResult.contactsNotified ?? 0) > 0 ? (
+              <p className="text-sm text-emerald-300 mt-3 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" />
+                {panicResult.contactsNotified} contato(s) acionado(s) com
+                confirmacao de envio.
+                {(panicResult.deliveryFailed ?? 0) > 0
+                  ? ` ${panicResult.deliveryFailed} falhou(ram).`
+                  : ""}
               </p>
-              {!panicResult.persisted && panicResult.pendingReason && (
-                <p className="text-xs text-amber-300/80 mt-1.5">
-                  Motivo: {panicResult.pendingReason}
-                </p>
-              )}
-              <a
-                href="tel:190"
-                className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold"
+            ) : (
+              <div
+                className="mt-3 rounded-xl border border-amber-700 bg-amber-950/30 p-3"
+                role="alert"
               >
-                <Phone className="h-4 w-4" /> Ligar 190 agora
-              </a>
-            </div>
-          )}
+                <p className="text-sm text-amber-200 flex items-start gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    {panicResult.persisted
+                      ? "Alerta registrado"
+                      : "Alerta recebido, mas ainda nao registrado"}
+                    , mas <strong>nenhum contato foi acionado</strong>.
+                    {(panicResult.contactsRegistered ?? 0) === 0 ? (
+                      <>
+                        {" "}
+                        Voce nao tem contato de emergencia cadastrado —{" "}
+                        <Link
+                          href="/perfil/contatos-emergencia"
+                          className="text-fuchsia-300 underline"
+                        >
+                          cadastre agora
+                        </Link>
+                        .
+                      </>
+                    ) : (
+                      " O envio falhou."
+                    )}
+                  </span>
+                </p>
+                {!panicResult.persisted && panicResult.pendingReason && (
+                  <p className="text-xs text-amber-300/80 mt-1.5">
+                    Motivo: {panicResult.pendingReason}
+                  </p>
+                )}
+                <a
+                  href="tel:190"
+                  className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold"
+                >
+                  <Phone className="h-4 w-4" /> Ligar 190 agora
+                </a>
+              </div>
+            ))}
           {panicError && (
             <p className="text-sm text-rose-300 mt-3" role="alert">
               {panicError}
@@ -542,7 +585,7 @@ export default function SegurancaEncontrosPage() {
                   <>
                     {" "}
                     <Link
-                      href="/perfil/editar"
+                      href="/perfil/contatos-emergencia"
                       className="text-fuchsia-300 underline"
                     >
                       Cadastre contatos
