@@ -9,7 +9,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { SUBVERTICALS } from "@/lib/subverticals";
+import {
+  DISCOVERY_SUBVERTICALS,
+  keepDiscoverySubverticals,
+  type DiscoverySubvertical,
+} from "@/lib/subverticals";
 
 type Intent = "casual" | "serious" | "friendship" | "any";
 
@@ -18,7 +22,15 @@ type Filters = {
   ageMax: number;
   distanceKm: number;
   intent: Intent;
-  verticals: string[];
+  /**
+   * Valores do ENUM `DiscoverySubvertical` do gateway — nao slug do catalogo
+   * de interesses. Sao gravados em `metadata.verticals`, que o backend espelha
+   * em `RelationshipProfile.preferences.subverticais`
+   * (camaleao.service.ts, `mirrorToDiscoveryPreferences`) e o feed compara por
+   * intersecao com o que `discoverProfiles` pede — os dois lados tem que falar
+   * o mesmo enum. Ver src/lib/subverticals.ts (DISCOVERY_SUBVERTICALS).
+   */
+  verticals: DiscoverySubvertical[];
   verifiedOnly: boolean;
 };
 
@@ -111,7 +123,19 @@ export default function FiltrosPage() {
     // cache otimista imediato pra evitar flash
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setFilters({ ...DEFAULT_FILTERS, ...JSON.parse(raw) });
+      if (raw) {
+        const cached = JSON.parse(raw) as Partial<Filters>;
+        setFilters({
+          ...DEFAULT_FILTERS,
+          ...cached,
+          // Cache gravado antes do fix guarda slug minusculo; slug que o enum
+          // do gateway nao conhece e descartado em vez de voltar como selecao
+          // fantasma.
+          verticals: keepDiscoverySubverticals(
+            Array.isArray(cached.verticals) ? cached.verticals : [],
+          ),
+        });
+      }
     } catch {
       /* localStorage indisponivel */
     }
@@ -129,7 +153,7 @@ export default function FiltrosPage() {
         const p = data.relationshipPreferences;
         if (cancelled || !p) return;
         const meta = (p.metadata ?? {}) as {
-          verticals?: string[];
+          verticals?: unknown[];
           verifiedOnly?: boolean;
         };
         setFilters({
@@ -139,7 +163,9 @@ export default function FiltrosPage() {
           intent: p.preferredIntent
             ? (BACKEND_TO_INTENT[p.preferredIntent] ?? "any")
             : "any",
-          verticals: Array.isArray(meta.verticals) ? meta.verticals : [],
+          verticals: keepDiscoverySubverticals(
+            Array.isArray(meta.verticals) ? meta.verticals : [],
+          ),
           verifiedOnly: !!meta.verifiedOnly,
         });
       } catch {
@@ -156,12 +182,12 @@ export default function FiltrosPage() {
     setSaved(false);
   };
 
-  const toggleVertical = (slug: string) => {
+  const toggleVertical = (value: DiscoverySubvertical) => {
     setFilters((prev) => ({
       ...prev,
-      verticals: prev.verticals.includes(slug)
-        ? prev.verticals.filter((s) => s !== slug)
-        : [...prev.verticals, slug],
+      verticals: prev.verticals.includes(value)
+        ? prev.verticals.filter((s) => s !== value)
+        : [...prev.verticals, value],
     }));
     setSaved(false);
   };
@@ -187,7 +213,10 @@ export default function FiltrosPage() {
           preferredIntent: INTENT_TO_BACKEND[filters.intent],
           // metadata carrega o que nao tem coluna propria (verticals/verifiedOnly).
           // O backend espelha verticals -> subverticais e verifiedOnly no blob
-          // de discovery (RelationshipProfile.preferences).
+          // de discovery (RelationshipProfile.preferences). `metadata` e
+          // GraphQLJSON — o gateway NAO valida o dominio aqui, entao o valor
+          // errado nao da erro: ele grava e o gate do feed nunca casa. Por isso
+          // `verticals` so carrega valor do enum DiscoverySubvertical.
           metadata: {
             verticals: filters.verticals,
             verifiedOnly: filters.verifiedOnly,
@@ -313,19 +342,20 @@ export default function FiltrosPage() {
         {/* Subverticais */}
         <fieldset className="rounded-xl border border-border p-4">
           <legend className="px-2 text-sm font-medium">
-            Subverticais ({filters.verticals.length} de {SUBVERTICALS.length})
+            Subverticais ({filters.verticals.length} de{" "}
+            {DISCOVERY_SUBVERTICALS.length})
           </legend>
           <p className="text-xs text-muted-foreground mt-1">
             Selecione zero pra ver tudo, ou marque as que importam.
           </p>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">
-            {SUBVERTICALS.map((sv) => {
-              const on = filters.verticals.includes(sv.slug);
+            {DISCOVERY_SUBVERTICALS.map((sv) => {
+              const on = filters.verticals.includes(sv.value);
               return (
                 <button
-                  key={sv.slug}
+                  key={sv.value}
                   type="button"
-                  onClick={() => toggleVertical(sv.slug)}
+                  onClick={() => toggleVertical(sv.value)}
                   className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
                     on
                       ? "border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/40 text-fuchsia-700 dark:text-fuchsia-300"

@@ -12,6 +12,11 @@
 // 9 sinais medidos em dados proprios). A coluna carrega DEPOIS da fila, em lotes
 // de 25 ids, e cada estado tem texto proprio (calculando / n/d / sem perfil /
 // sem sinal). Nenhum score é inventado quando o motor nao mede.
+//
+// FILA PRIORIZADA: o gateway devolve platformReports por createdAt DESC
+// (platform-moderation.service.ts) — mais recente primeiro, que nao e mais grave
+// primeiro. A tela reordena pelo riskScore do lote (maior risco no topo). Ver
+// o memo `ordered` abaixo pro tratamento de quem nao tem score medido.
 
 "use client";
 
@@ -232,6 +237,39 @@ export default function DenunciasPage() {
     [reports, filter],
   );
 
+  /**
+   * Fila priorizada pelo motor: maior `riskScore` primeiro.
+   *
+   * O backend ordena por `createdAt: 'desc'` (platform-moderation.service.ts,
+   * `platformReports`), entao ate aqui a nota de risco era so uma coluna: o
+   * moderador via a denuncia mais recente no topo, nao a mais grave. O score ja
+   * chega em lote via `trustSignalsBatch`, entao a ordenacao acontece no
+   * cliente, sobre a pagina carregada (limit 100).
+   *
+   * Sem score medido (`riskScore === null`, perfil que o motor nao achou, ou
+   * lote ainda em voo) a linha NAO vira 0 — 0 significaria "risco minimo,
+   * medido". Ela cai num balde proprio DEPOIS das medidas, preservando a ordem
+   * de data que o backend mandou; o indice original desempata, o que tambem
+   * torna a ordenacao estavel. Conforme os lotes chegam, as medidas sobem.
+   */
+  const ordered = useMemo(() => {
+    const riskOf = (r: PlatformReport): number | null =>
+      trust[r.reportedId]?.riskScore ?? null;
+    return filtered
+      .map((report, index) => ({ report, index }))
+      .sort((a, b) => {
+        const ra = riskOf(a.report);
+        const rb = riskOf(b.report);
+        if (ra === null || rb === null) {
+          if (ra === rb) return a.index - b.index;
+          return ra === null ? 1 : -1;
+        }
+        if (rb !== ra) return rb - ra;
+        return a.index - b.index;
+      })
+      .map((x) => x.report);
+  }, [filtered, trust]);
+
   const counts = useMemo(
     () => ({
       all: reports.length,
@@ -262,6 +300,12 @@ export default function DenunciasPage() {
           verificacao, denuncias, bloqueios, velocidade e template de mensagem,
           reciprocidade, geo/device, reuso de foto). Clique no selo pra ver sinal
           por sinal. Sem sinal medido, nao ha score — e a celula diz isso.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          A fila vem ordenada por <strong>maior risco primeiro</strong>, nao por
+          data. Denuncia cujo risco o motor ainda nao mediu (ou nao conseguiu
+          medir) fica depois das medidas, na ordem de chegada — nunca no topo
+          nem tratada como risco zero.
         </p>
       </header>
 
@@ -332,7 +376,7 @@ export default function DenunciasPage() {
 
       {/* Ready */}
       {state === "ready" &&
-        (filtered.length === 0 ? (
+        (ordered.length === 0 ? (
           <div className="p-12 text-center rounded-lg border border-dashed border-border">
             <p className="font-semibold mb-1">Nenhuma denuncia neste filtro</p>
             <p className="text-sm text-muted-foreground">Tente outro filtro.</p>
@@ -354,7 +398,7 @@ export default function DenunciasPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {ordered.map((r) => (
                   <Fragment key={r.id}>
                   <tr className="border-t border-border">
                     <td className="p-3 font-mono text-xs">

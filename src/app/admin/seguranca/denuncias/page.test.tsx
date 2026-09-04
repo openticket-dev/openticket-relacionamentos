@@ -210,3 +210,64 @@ describe("Admin denuncias — coluna de risco (REL-G4)", () => {
     ).toBeInTheDocument();
   });
 });
+
+// Regressao: o gateway devolve platformReports por createdAt DESC
+// (platform-moderation.service.ts) e a tela nao reordenava — o score do motor
+// ficava so como coluna e o moderador via o mais RECENTE no topo, nao o mais
+// GRAVE. As linhas abaixo chegam na pior ordem possivel de proposito: um sort
+// que nao faz nada reprova.
+describe("Admin denuncias — fila priorizada pela nota de risco", () => {
+  const row = (id: string, reportedId: string, createdAt: string) => ({
+    ...REPORT,
+    id,
+    reportedId,
+    createdAt,
+  });
+
+  it("ordena por riskScore desc e deixa quem nao tem score medido por ultimo", async () => {
+    installFetch({
+      reports: [
+        // ordem que o backend manda: createdAt desc (mais recente primeiro).
+        row("risk-na-1", "prof-nulo", "2026-07-03T12:00:00.000Z"),
+        row("risk-lo-1", "prof-baixo", "2026-07-02T12:00:00.000Z"),
+        row("risk-hi-1", "prof-alto", "2026-07-01T12:00:00.000Z"),
+      ],
+      trust: {
+        items: [
+          trustReport({
+            profileId: "prof-nulo",
+            trustScore: null,
+            riskScore: null,
+            riskLevel: "UNKNOWN",
+            signalsComputed: 0,
+            confidence: 0,
+            scoreUnavailableReason:
+              "SEM_SINAL_COMPUTAVEL: nenhuma das 9 medicoes retornou dado.",
+          }),
+          trustReport({
+            profileId: "prof-baixo",
+            trustScore: 90,
+            riskScore: 10,
+            riskLevel: "LOW",
+          }),
+          trustReport({
+            profileId: "prof-alto",
+            trustScore: 18,
+            riskScore: 82,
+            riskLevel: "CRITICAL",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(<DenunciasPage />);
+
+    // A coluna ID renderiza id.slice(0, 8) — os 3 prefixos sao distintos.
+    await waitFor(() => {
+      const ids = Array.from(container.querySelectorAll("tbody tr")).map(
+        (tr) => tr.querySelector("td")?.textContent,
+      );
+      expect(ids).toEqual(["risk-hi-", "risk-lo-", "risk-na-"]);
+    });
+  });
+});
