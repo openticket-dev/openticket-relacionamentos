@@ -9,9 +9,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { SUBVERTICALS } from "@/lib/subverticals";
+import {
+  DISCOVERY_SUBVERTICALS,
+  type DiscoverySubvertical,
+} from "@/lib/subverticals";
 import { SaveToFavoritesButton } from "@/components/SaveToFavoritesButton";
 
+// O seletor de vertical manda o valor do ENUM `DiscoverySubvertical` do gateway
+// (DiscoveryFiltersInput.subverticais), nao o slug do catalogo de interesses —
+// slug minusculo faz o gateway rejeitar a query inteira na validacao do enum.
+// Ver src/lib/subverticals.ts (bloco DISCOVERY_SUBVERTICALS).
 const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
   query DiscoverProfilesExplore($filters: DiscoveryFiltersInput) {
     discoverProfiles(filters: $filters) {
@@ -61,7 +68,7 @@ type LoadState = "loading" | "ready" | "empty" | "error";
 type SortMode = "affinity" | "nearby";
 
 async function fetchDiscovery(
-  subverticais: string[] | null,
+  subverticais: DiscoverySubvertical[] | null,
 ): Promise<DiscoveryProfile[]> {
   const res = await fetch("/api/graphql", {
     method: "POST",
@@ -93,7 +100,9 @@ async function fetchDiscovery(
 
 export default function ExplorePage() {
   const [sort, setSort] = useState<SortMode>("affinity");
-  const [filterVertical, setFilterVertical] = useState<string>("all");
+  const [filterVertical, setFilterVertical] = useState<
+    DiscoverySubvertical | "all"
+  >("all");
 
   const [state, setState] = useState<LoadState>("loading");
   const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
@@ -173,12 +182,14 @@ export default function ExplorePage() {
         <select
           aria-label="Vertical"
           value={filterVertical}
-          onChange={(e) => setFilterVertical(e.target.value)}
+          onChange={(e) =>
+            setFilterVertical(e.target.value as DiscoverySubvertical | "all")
+          }
           className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
         >
           <option value="all">Todas verticais</option>
-          {SUBVERTICALS.map((sv) => (
-            <option key={sv.slug} value={sv.slug}>
+          {DISCOVERY_SUBVERTICALS.map((sv) => (
+            <option key={sv.value} value={sv.value}>
               {sv.emoji} {sv.label}
             </option>
           ))}

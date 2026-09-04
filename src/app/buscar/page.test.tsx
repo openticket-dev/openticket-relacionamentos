@@ -119,6 +119,32 @@ describe("Buscar — deck de swipe (fluxo swipe/match)", () => {
     expect(calls.some((c) => c.query.includes("acceptMatch"))).toBe(false);
   });
 
+  // Regressao: os chips mandavam o slug minusculo do catalogo de interesses
+  // ("networking") num campo tipado [DiscoverySubvertical] — o gateway rejeita a
+  // query inteira na validacao do enum e a tela cai no estado de erro.
+  it("chip manda o valor do ENUM DiscoverySubvertical, nao slug minusculo", async () => {
+    const { calls } = installFetch({ discover: [PROFILE] });
+    render(<BuscarPage />);
+    await screen.findByRole("region", { name: /Card de Alex/ });
+
+    // Sem chip: nenhuma subvertical vai no filtro.
+    expect(
+      calls.find((c) => c.query.includes("discoverProfiles"))?.variables,
+    ).toEqual({ filters: { limit: 20, cursor: 0 } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Networking/ }));
+
+    await waitFor(() => {
+      const discover = calls.filter((c) =>
+        c.query.includes("discoverProfiles"),
+      );
+      expect(discover.length).toBeGreaterThan(1);
+      expect(discover[discover.length - 1]!.variables).toEqual({
+        filters: { limit: 20, cursor: 0, subverticais: ["NETWORKING"] },
+      });
+    });
+  });
+
   it("mostra o toast de match quando acceptMatch retorna status 'matched'", async () => {
     installFetch({ discover: [PROFILE], acceptStatus: "matched" });
     render(<BuscarPage />);

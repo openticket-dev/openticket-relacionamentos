@@ -13,11 +13,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { SUBVERTICALS } from "@/lib/subverticals";
+import {
+  DISCOVERY_SUBVERTICALS,
+  type DiscoverySubvertical,
+} from "@/lib/subverticals";
 
 // Contrato do gateway (introspection DiscoveryFeedResultGql / DiscoveryProfile):
 //   discoverProfiles(filters: DiscoveryFiltersInput): DiscoveryFeedResultGql!
 //   DiscoveryProfile { id displayName avatar age distance bio interests score ... }
+//   DiscoveryFiltersInput.subverticais: [DiscoverySubvertical]  <- ENUM
+//
+// Os chips mandam o valor do ENUM (ALMA_GEMEA, NETWORKING, ...), nunca o slug
+// do catalogo de interesses (dating, networking, ...): slug minusculo faz o
+// gateway rejeitar a query inteira na validacao do enum e a tela cai no estado
+// de erro. Fonte dos valores + porque mentoria nao esta na lista:
+// src/lib/subverticals.ts (bloco DISCOVERY_SUBVERTICALS).
 const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
   query DiscoverProfiles($filters: DiscoveryFiltersInput) {
     discoverProfiles(filters: $filters) {
@@ -53,7 +63,7 @@ type SwipeAction = "pass" | "like" | "super";
 type LoadState = "loading" | "ready" | "empty" | "error";
 
 async function fetchDiscovery(
-  subverticais: string[] | null,
+  subverticais: DiscoverySubvertical[] | null,
 ): Promise<DiscoveryProfile[]> {
   const res = await fetch("/api/graphql", {
     method: "POST",
@@ -152,7 +162,9 @@ async function persistSwipe(
 }
 
 export default function BuscarPage() {
-  const [activeVertical, setActiveVertical] = useState<string>("all");
+  const [activeVertical, setActiveVertical] = useState<
+    DiscoverySubvertical | "all"
+  >("all");
   const [cursor, setCursor] = useState(0);
   const [history, setHistory] = useState<{ id: string; action: SwipeAction }[]>(
     [],
@@ -313,12 +325,12 @@ export default function BuscarPage() {
         >
           Todos
         </button>
-        {SUBVERTICALS.slice(0, 8).map((sv) => (
+        {DISCOVERY_SUBVERTICALS.slice(0, 8).map((sv) => (
           <button
-            key={sv.slug}
-            onClick={() => setActiveVertical(sv.slug)}
+            key={sv.value}
+            onClick={() => setActiveVertical(sv.value)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              activeVertical === sv.slug
+              activeVertical === sv.value
                 ? "bg-fuchsia-600 text-white"
                 : "bg-muted hover:bg-accent"
             }`}
