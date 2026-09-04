@@ -59,7 +59,14 @@ const routes = appFiles
   .map(routeFromPagePath);
 const routeMatchers = routes.map(routeToRegExp);
 
-const LINK_RE = /(?:href\s*=\s*|router\.push\(\s*)["'`](\/[^"'`\n${}]*)["'`]/g;
+// `router.replace` entrou em 04/09/2026: o gate so olhava href e router.push,
+// e por isso deixou passar o `router.replace("/hub")` no fim do onboarding
+// (src/app/onboarding/perfil/page.tsx). "hub" nao existe neste app nem na
+// allowlist de proxy do shell, entao a pessoa terminava o cadastro e caia no
+// catch-all do shell, que redireciona pro cockpit do fundador. Navegar por
+// replace nao e menos navegar.
+const LINK_RE =
+  /(?:href\s*=\s*|router\.(?:push|replace)\(\s*)["'`](\/[^"'`\n${}]*)["'`]/g;
 
 type Link = { file: string; target: string; line: number };
 

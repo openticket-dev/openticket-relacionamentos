@@ -141,9 +141,16 @@ export default function AdminDashboardPage() {
         <div className="flex items-center justify-between mt-2">
           <div>
             <h1 className="text-2xl font-semibold">Dashboard</h1>
+            {/* A frase dizia "RBAC role: SUPER_ADMIN." cravada no JSX —
+                afirmacao sobre QUEM esta olhando, escrita sem nunca ler a
+                sessao: renderizava identica pra qualquer visitante. Trocado
+                por uma frase sobre o ENDPOINT, que e verificavel e verdadeira:
+                as queries deste dashboard vivem no PlatformModerationResolver
+                atras de RolesGuard(SUPER_ADMIN) — quem nao tem o papel recebe
+                erro do gateway e a tela cai no estado de erro. */}
             <p className="text-sm text-muted-foreground mt-1">
-              Visão consolidada da operação Relacionamentos. RBAC role:
-              SUPER_ADMIN.
+              Visão consolidada da operação Relacionamentos. Os dados abaixo
+              exigem papel SUPER_ADMIN no gateway.
             </p>
           </div>
           <button
