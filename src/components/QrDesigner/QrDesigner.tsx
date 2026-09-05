@@ -16,6 +16,11 @@
  * generated QR is a REAL, resolvable, company-scoped URL — zero mock, zero
  * placeholder. The QR matrix is rendered live by qr-code-styling (level H).
  *
+ * REL-OPS-03: the "Exportar PNG (em breve)" button was removed. It was disabled
+ * and exported nothing — a placeholder shipped to the user, which the zero-
+ * incomplete-feature rule forbids. PNG export is NOT implemented; when it is, it
+ * comes back as a working button, not as a promise.
+ *
  * Persistence: the chosen variant + texts are persisted to localStorage keyed
  * by `vertical:companyId`, so each company keeps its own seal style. A backend
  * resolver (BusinessQrConfig) is NOT yet implemented — we do NOT fake it; the
@@ -26,7 +31,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
-  Download,
   Info,
   Moon,
   QrCode,
@@ -547,16 +551,6 @@ export function QrDesigner({ vertical, companyId, backHref }: QrDesignerProps) {
           >
             {selectedMeta?.tagline}
           </p>
-
-          <button
-            disabled
-            title="PNG export em roadmap"
-            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold opacity-50 cursor-not-allowed"
-            style={{ background: subtleBg, border: `1px solid ${cardBorder}`, color: fg }}
-          >
-            <Download className="h-3 w-3" />
-            Exportar PNG (em breve)
-          </button>
         </main>
 
         {/* RIGHT — Use cases panel */}
