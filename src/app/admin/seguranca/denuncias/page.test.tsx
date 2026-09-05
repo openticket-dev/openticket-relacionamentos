@@ -74,6 +74,7 @@ function trustReport(overrides: Record<string, unknown> = {}) {
 
 function installFetch(opts: {
   reports?: unknown[];
+  total?: number;
   trust?: { items: unknown[]; missingProfileIds?: string[] };
   trustError?: string;
 }) {
@@ -112,7 +113,7 @@ function installFetch(opts: {
         data: {
           platformReports: {
             items: opts.reports ?? [],
-            total: (opts.reports ?? []).length,
+            total: opts.total ?? (opts.reports ?? []).length,
           },
         },
       }),
@@ -268,6 +269,46 @@ describe("Admin denuncias — fila priorizada pela nota de risco", () => {
         (tr) => tr.querySelector("td")?.textContent,
       );
       expect(ids).toEqual(["risk-hi-", "risk-lo-", "risk-na-"]);
+    });
+  });
+});
+
+// REL-ADM-07 — o filtro de status era `Array.filter` sobre a pagina e o `total`
+// que o resolver devolvia era pedido e jogado fora: com mais de 100 denuncias a
+// tela escondia o resto sem aviso e o chip "Todas" mostrava o tamanho da pagina.
+// Estes dois testes falham no codigo antigo: (1) o antigo nunca mandava `status`
+// no input nem refazia a consulta ao trocar de chip; (2) o antigo nao tinha
+// resumo de paginacao nenhum, entao o testid nem existia.
+describe("Admin denuncias — filtro no servidor e total real (REL-ADM-07)", () => {
+  it("o total mostrado e o do servidor, nao o tamanho da pagina", async () => {
+    installFetch({ reports: [REPORT], total: 342, trust: { items: [] } });
+    render(<DenunciasPage />);
+    const resumo = await screen.findByTestId("denuncias-paginacao-resumo");
+    expect(resumo.textContent).toContain("de 342");
+    expect(
+      screen.getByTestId("denuncias-chip-all").textContent,
+    ).toContain("342");
+  });
+
+  it("trocar de chip refaz a consulta com o status NO INPUT", async () => {
+    const { calls } = installFetch({
+      reports: [REPORT],
+      total: 342,
+      trust: { items: [] },
+    });
+    render(<DenunciasPage />);
+    await screen.findByTestId("denuncias-paginacao-resumo");
+
+    fireEvent.click(screen.getByTestId("denuncias-chip-PENDING"));
+
+    await waitFor(() => {
+      const reportCalls = calls.filter((c) =>
+        c.query.includes("platformReports"),
+      );
+      const ultima = reportCalls[reportCalls.length - 1];
+      expect(ultima?.variables).toEqual({
+        input: { status: "PENDING", limit: 100, offset: 0 },
+      });
     });
   });
 });

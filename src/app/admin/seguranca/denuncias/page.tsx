@@ -17,6 +17,14 @@
 // (platform-moderation.service.ts) — mais recente primeiro, que nao e mais grave
 // primeiro. A tela reordena pelo riskScore do lote (maior risco no topo). Ver
 // o memo `ordered` abaixo pro tratamento de quem nao tem score medido.
+//
+// REL-ADM-07: o filtro de status agora vai no INPUT da query
+// (`PlatformReportsFilterInput.status`, enum PlatformReportStatus — confirmado
+// por introspection no gateway de staging), nao mais em `Array.filter` sobre a
+// pagina. O `total` que o resolver ja devolvia era pedido e jogado fora; agora
+// ele e renderizado e comanda a paginacao por `offset`. Antes disso, com mais de
+// 100 denuncias a tela escondia o resto sem aviso e os contadores dos chips
+// mediam so a pagina carregada.
 
 "use client";
 
@@ -125,11 +133,18 @@ const STATUS_COLOR: Record<ReportStatus, string> = {
   DISMISSED: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
 
+// Teto por pagina. O resolver aceita `limit`/`offset` obrigatorios
+// (PlatformReportsFilterInput), entao a navegacao e por offset.
+const PAGE_SIZE = 100;
+
 export default function DenunciasPage() {
   const [reports, setReports] = useState<PlatformReport[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<ReportStatus | "all">("all");
+  // `total` vem do resolver e e a verdade do tamanho da fila — nunca reports.length.
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [acting, setActing] = useState<string | null>(null);
   // REL-G4 — risco por perfil denunciado (motor de trust-signals).
   const [trust, setTrust] = useState<Record<string, TrustReport>>({});
@@ -143,9 +158,16 @@ export default function DenunciasPage() {
     try {
       const data = await gql<{
         platformReports: { items: PlatformReport[]; total: number };
-      }>(PLATFORM_REPORTS_QUERY, { input: { limit: 100, offset: 0 } });
+      }>(PLATFORM_REPORTS_QUERY, {
+        input: {
+          status: filter === "all" ? null : filter,
+          limit: PAGE_SIZE,
+          offset,
+        },
+      });
       const items = data.platformReports?.items ?? [];
       setReports(items);
+      setTotal(data.platformReports?.total ?? 0);
       setState(items.length === 0 ? "empty" : "ready");
     } catch (err) {
       setErrorMessage(
@@ -153,7 +175,7 @@ export default function DenunciasPage() {
       );
       setState("error");
     }
-  }, []);
+  }, [filter, offset]);
 
   useEffect(() => {
     load();
@@ -231,12 +253,6 @@ export default function DenunciasPage() {
     }
   };
 
-  const filtered = useMemo(
-    () =>
-      reports.filter((r) => filter === "all" || r.status === filter),
-    [reports, filter],
-  );
-
   /**
    * Fila priorizada pelo motor: maior `riskScore` primeiro.
    *
@@ -244,7 +260,7 @@ export default function DenunciasPage() {
    * `platformReports`), entao ate aqui a nota de risco era so uma coluna: o
    * moderador via a denuncia mais recente no topo, nao a mais grave. O score ja
    * chega em lote via `trustSignalsBatch`, entao a ordenacao acontece no
-   * cliente, sobre a pagina carregada (limit 100).
+   * cliente, sobre a pagina carregada (PAGE_SIZE).
    *
    * Sem score medido (`riskScore === null`, perfil que o motor nao achou, ou
    * lote ainda em voo) a linha NAO vira 0 — 0 significaria "risco minimo,
@@ -255,7 +271,7 @@ export default function DenunciasPage() {
   const ordered = useMemo(() => {
     const riskOf = (r: PlatformReport): number | null =>
       trust[r.reportedId]?.riskScore ?? null;
-    return filtered
+    return reports
       .map((report, index) => ({ report, index }))
       .sort((a, b) => {
         const ra = riskOf(a.report);
@@ -268,18 +284,7 @@ export default function DenunciasPage() {
         return a.index - b.index;
       })
       .map((x) => x.report);
-  }, [filtered, trust]);
-
-  const counts = useMemo(
-    () => ({
-      all: reports.length,
-      PENDING: reports.filter((r) => r.status === "PENDING").length,
-      REVIEWED: reports.filter((r) => r.status === "REVIEWED").length,
-      ACTIONED: reports.filter((r) => r.status === "ACTIONED").length,
-      DISMISSED: reports.filter((r) => r.status === "DISMISSED").length,
-    }),
-    [reports],
-  );
+  }, [reports, trust]);
 
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">
@@ -307,6 +312,13 @@ export default function DenunciasPage() {
           medir) fica depois das medidas, na ordem de chegada — nunca no topo
           nem tratada como risco zero.
         </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          O filtro de status e aplicado <strong>no servidor</strong>, e o numero
+          no chip selecionado e o <strong>total da fila</strong> naquele status —
+          nao o tamanho da pagina. Os chips nao selecionados nao mostram numero
+          porque esse total nao foi consultado: contador que so conta a pagina
+          carregada mente quando ha mais de {PAGE_SIZE} denuncias.
+        </p>
       </header>
 
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -314,15 +326,19 @@ export default function DenunciasPage() {
           (k) => (
             <button
               key={k}
-              onClick={() => setFilter(k as ReportStatus | "all")}
+              data-testid={`denuncias-chip-${k}`}
+              onClick={() => {
+                setFilter(k as ReportStatus | "all");
+                setOffset(0);
+              }}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 filter === k
                   ? "bg-fuchsia-600 text-white"
                   : "bg-muted hover:bg-accent"
               }`}
             >
-              {k === "all" ? "Todas" : STATUS_LABEL[k as ReportStatus]} (
-              {counts[k]})
+              {k === "all" ? "Todas" : STATUS_LABEL[k as ReportStatus]}
+              {filter === k && state !== "loading" ? ` (${total})` : ""}
             </button>
           ),
         )}
@@ -364,24 +380,38 @@ export default function DenunciasPage() {
       )}
 
       {/* Empty */}
-      {state === "empty" && (
-        <div className="p-12 text-center rounded-lg border border-dashed border-border">
-          <p className="text-4xl mb-3">✅</p>
-          <p className="font-semibold mb-1">Sem denuncias</p>
-          <p className="text-sm text-muted-foreground">
-            Quando usuarios denunciarem perfis ou mensagens, aparecem aqui.
-          </p>
-        </div>
-      )}
-
-      {/* Ready */}
-      {state === "ready" &&
-        (ordered.length === 0 ? (
+      {state === "empty" &&
+        (filter === "all" && offset === 0 ? (
           <div className="p-12 text-center rounded-lg border border-dashed border-border">
-            <p className="font-semibold mb-1">Nenhuma denuncia neste filtro</p>
-            <p className="text-sm text-muted-foreground">Tente outro filtro.</p>
+            <p className="text-4xl mb-3">✅</p>
+            <p className="font-semibold mb-1">Sem denuncias</p>
+            <p className="text-sm text-muted-foreground">
+              Quando usuarios denunciarem perfis ou mensagens, aparecem aqui.
+            </p>
           </div>
         ) : (
+          <div className="p-12 text-center rounded-lg border border-dashed border-border">
+            <p className="font-semibold mb-1">
+              Nenhuma denuncia nesta pagina do filtro
+            </p>
+            <p className="text-sm text-muted-foreground">
+              O servidor contou {total} denuncia(s) nesta consulta.
+            </p>
+            <button
+              onClick={() => {
+                setFilter("all");
+                setOffset(0);
+              }}
+              className="mt-4 px-4 py-2 text-sm rounded-lg border border-border hover:bg-accent"
+            >
+              Ver todas
+            </button>
+          </div>
+        ))}
+
+      {/* Ready */}
+      {state === "ready" && (
+        <>
           <div className="border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
@@ -465,7 +495,36 @@ export default function DenunciasPage() {
               </tbody>
             </table>
           </div>
-        ))}
+
+          {/* Paginacao — o `total` e do servidor; a pagina nunca esconde o resto
+              em silencio. */}
+          <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="denuncias-paginacao-resumo"
+            >
+              Mostrando {offset + 1}–{offset + reports.length} de {total}
+              {filter === "all" ? "" : ` em ${STATUS_LABEL[filter]}`}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+                disabled={offset === 0}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent"
+              >
+                ← Anterior
+              </button>
+              <button
+                onClick={() => setOffset((o) => o + PAGE_SIZE)}
+                disabled={offset + reports.length >= total}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent"
+              >
+                Proxima →
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </main>
   );
 }
