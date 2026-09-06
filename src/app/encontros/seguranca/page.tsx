@@ -12,6 +12,15 @@
  *     de contatos avisados (openticket-api
  *     apps/relacionamentos/src/resolvers/user-perfil-extras.resolver.ts:145-173).
  *     A copy tem que dizer isso — botao de panico que mente custa vida.
+ *
+ * QA100-REL-05 (06/09/2026) — a suite FIX-23 desta tela estava VERMELHA em
+ * origin/staging (2 casos). Ela cobrava duas coisas que a tela nao entregava:
+ * a frase "Nenhum contato foi notificado automaticamente" (a copy dizia
+ * "nenhum contato foi acionado", que nao separa "ninguem foi avisado" de
+ * "avisei sozinho por outro canal") e o ID do evento de panico na tela. Gate
+ * vermelho ha semanas e gate desligado: a proxima regressao de verdade nesta
+ * tela nao acusaria nada. O codigo passou a atender o gate; nenhuma assercao
+ * foi afrouxada.
  *   - Compartilhe sua localizacao ao vivo durante o encontro (startLocationShare
  *     / updateLocationShare / stopLocationShare). Mesma ressalva: o resolver so
  *     guarda a sessao e faz um COUNT dos contatos — `contactsNotified` e um
@@ -513,7 +522,10 @@ export default function SegurancaEncontrosPage() {
                     {panicResult.persisted
                       ? "Alerta registrado"
                       : "Alerta recebido, mas ainda nao registrado"}
-                    , mas <strong>nenhum contato foi acionado</strong>.
+                    .{" "}
+                    <strong>
+                      Nenhum contato foi notificado automaticamente.
+                    </strong>{" "}
                     {(panicResult.contactsRegistered ?? 0) === 0 ? (
                       <>
                         {" "}
@@ -527,10 +539,26 @@ export default function SegurancaEncontrosPage() {
                         .
                       </>
                     ) : (
-                      " O envio falhou."
+                      "O envio falhou."
                     )}
                   </span>
                 </p>
+                {/* QA100-REL-05 — o id do evento e a UNICA coisa que de fato
+                    aconteceu quando ninguem foi notificado. Sem ele na tela a
+                    pessoa nao tem como citar o registro depois, nem a
+                    moderacao tem como cruzar o caso. O gate FIX-23 ja cobrava
+                    isso e a tela nao mostrava. */}
+                {panicResult.panicEventId && (
+                  <p
+                    className="text-xs text-amber-300/80 mt-1.5"
+                    data-testid="panico-registro-id"
+                  >
+                    Registro do alerta:{" "}
+                    <span className="font-mono">
+                      {panicResult.panicEventId}
+                    </span>
+                  </p>
+                )}
                 {!panicResult.persisted && panicResult.pendingReason && (
                   <p className="text-xs text-amber-300/80 mt-1.5">
                     Motivo: {panicResult.pendingReason}

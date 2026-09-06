@@ -6,6 +6,14 @@
 // NOTA de contrato (PlatformBan entity): { id blockerId blockedId reason
 // createdAt active }. NAO ha userName/banType/expiresAt/bannedBy no gateway —
 // renderiza ids reais + estado active. Filtro activeOnly server-side.
+//
+// QA100-REL-01 (06/09/2026) — a tela mentia o tamanho da lista. O `total` era
+// pedido na query e jogado fora; o cabecalho imprimia `bans.length`, que com
+// `limit: 100` cravado e offset fixo em 0 e no maximo 100. Com 340 bans ativos
+// o gestor lia "100 ban(s) ativo(s)" e nao tinha como chegar nos outros 240:
+// numero real com rotulo mentiroso, o pior tipo, porque parece medido.
+// Agora `total` manda no cabecalho e comanda a paginacao por offset — mesmo
+// desenho ja aplicado em admin/seguranca/denuncias.
 
 "use client";
 
@@ -24,6 +32,10 @@ interface PlatformBan {
 }
 
 type LoadState = "loading" | "ready" | "empty" | "error";
+
+// Teto por pagina. O resolver aceita limit/offset (PlatformBansFilterInput),
+// entao a navegacao e por offset e o total vem do servidor.
+const PAGE_SIZE = 50;
 
 const PLATFORM_BANS_QUERY = /* GraphQL */ `
   query PlatformBans($input: PlatformBansFilterInput) {
@@ -79,6 +91,9 @@ export default function BanidosPage() {
   const [search, setSearch] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  // `total` vem do resolver e e a verdade do tamanho da lista — nunca bans.length.
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -86,10 +101,11 @@ export default function BanidosPage() {
       const data = await gql<{
         platformBans: { items: PlatformBan[]; total: number };
       }>(PLATFORM_BANS_QUERY, {
-        input: { activeOnly, limit: 100, offset: 0 },
+        input: { activeOnly, limit: PAGE_SIZE, offset },
       });
       const items = data.platformBans?.items ?? [];
       setBans(items);
+      setTotal(data.platformBans?.total ?? 0);
       setState(items.length === 0 ? "empty" : "ready");
     } catch (err) {
       setErrorMessage(
@@ -97,7 +113,7 @@ export default function BanidosPage() {
       );
       setState("error");
     }
-  }, [activeOnly]);
+  }, [activeOnly, offset]);
 
   useEffect(() => {
     load();
@@ -141,9 +157,12 @@ export default function BanidosPage() {
           ← Seguranca
         </Link>
         <h1 className="text-2xl font-semibold mt-2">Usuarios Banidos</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p
+          className="text-sm text-muted-foreground mt-1"
+          data-testid="banidos-total"
+        >
           {state === "ready"
-            ? `${bans.length} ban(s) ${activeOnly ? "ativo(s)" : "no historico"}.`
+            ? `${total} ban(s) ${activeOnly ? "ativo(s)" : "no historico"} — mostrando ${bans.length} nesta pagina.`
             : "Desbloqueios sao logados."}
         </p>
       </header>
@@ -158,7 +177,10 @@ export default function BanidosPage() {
         />
         <div className="flex gap-2">
           <button
-            onClick={() => setActiveOnly(true)}
+            onClick={() => {
+              setActiveOnly(true);
+              setOffset(0);
+            }}
             className={`px-3 py-1.5 rounded-full text-xs font-medium ${
               activeOnly ? "bg-fuchsia-600 text-white" : "bg-muted hover:bg-accent"
             }`}
@@ -166,7 +188,10 @@ export default function BanidosPage() {
             Ativos
           </button>
           <button
-            onClick={() => setActiveOnly(false)}
+            onClick={() => {
+              setActiveOnly(false);
+              setOffset(0);
+            }}
             className={`px-3 py-1.5 rounded-full text-xs font-medium ${
               !activeOnly ? "bg-fuchsia-600 text-white" : "bg-muted hover:bg-accent"
             }`}
@@ -207,16 +232,31 @@ export default function BanidosPage() {
         </div>
       )}
 
-      {/* Empty */}
-      {state === "empty" && (
-        <div className="p-12 text-center rounded-lg border border-dashed border-border">
-          <p className="text-4xl mb-3">🤝</p>
-          <p className="font-semibold mb-1">Nenhum usuario banido</p>
-          <p className="text-sm text-muted-foreground">
-            Comunidade limpa por enquanto. Bans aparecem aqui apos resolucao de denuncias.
-          </p>
-        </div>
-      )}
+      {/* Empty — offset 0 e "nao ha ban"; offset > 0 e "acabou a lista",
+          e sao coisas diferentes. */}
+      {state === "empty" &&
+        (offset === 0 ? (
+          <div className="p-12 text-center rounded-lg border border-dashed border-border">
+            <p className="text-4xl mb-3">🤝</p>
+            <p className="font-semibold mb-1">Nenhum usuario banido</p>
+            <p className="text-sm text-muted-foreground">
+              Comunidade limpa por enquanto. Bans aparecem aqui apos resolucao de denuncias.
+            </p>
+          </div>
+        ) : (
+          <div className="p-12 text-center rounded-lg border border-dashed border-border">
+            <p className="font-semibold mb-1">Nenhum ban nesta pagina</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Sao {total} no filtro atual. Voce esta alem do fim da lista.
+            </p>
+            <button
+              onClick={() => setOffset(0)}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent"
+            >
+              Voltar ao inicio
+            </button>
+          </div>
+        ))}
 
       {/* Ready */}
       {state === "ready" &&
@@ -285,6 +325,37 @@ export default function BanidosPage() {
             </table>
           </div>
         ))}
+
+      {/* Paginacao — o `total` e do servidor; a pagina nunca esconde o resto
+          em silencio. */}
+      {state === "ready" && (
+        <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="banidos-paginacao-resumo"
+          >
+            Mostrando {offset + 1}–{offset + bans.length} de {total}
+            {activeOnly ? " ativos" : " no historico"}
+            {search.trim() ? " (a busca filtra so esta pagina)" : ""}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+              disabled={offset === 0}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent"
+            >
+              ← Anterior
+            </button>
+            <button
+              onClick={() => setOffset((o) => o + PAGE_SIZE)}
+              disabled={offset + bans.length >= total}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent"
+            >
+              Proxima →
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
