@@ -15,10 +15,18 @@ import {
 } from "@/lib/subverticals";
 import { SaveToFavoritesButton } from "@/components/SaveToFavoritesButton";
 
-// O seletor de vertical manda o valor do ENUM `DiscoverySubvertical` do gateway
+// O seletor manda o valor do ENUM `DiscoverySubvertical` do gateway
 // (DiscoveryFiltersInput.subverticais), nao o slug do catalogo de interesses —
 // slug minusculo faz o gateway rejeitar a query inteira na validacao do enum.
 // Ver src/lib/subverticals.ts (bloco DISCOVERY_SUBVERTICALS).
+//
+// QA100-REL-02 (06/09/2026) — o rotulo mentia. O select dizia "Todas verticais"
+// com aria-label "Vertical", e vertical na OpenTicket e outra coisa: Eventos,
+// Varejo, Saude, Igreja, Educacao. O que este filtro escolhe sao os interesses
+// de Relacionamentos (alma gemea, amizade, networking, pets...), todos dentro
+// desta mesma vertical. Quem lia o rotulo achava que estava buscando gente das
+// outras verticais da plataforma e concluia que a busca cross-vertical estava
+// quebrada quando a lista vinha curta. Rotulo agora diz interesse.
 const DISCOVER_PROFILES_QUERY = /* GraphQL */ `
   query DiscoverProfilesExplore($filters: DiscoveryFiltersInput) {
     discoverProfiles(filters: $filters) {
@@ -100,7 +108,7 @@ async function fetchDiscovery(
 
 export default function ExplorePage() {
   const [sort, setSort] = useState<SortMode>("affinity");
-  const [filterVertical, setFilterVertical] = useState<
+  const [filterInteresse, setFilterInteresse] = useState<
     DiscoverySubvertical | "all"
   >("all");
 
@@ -114,7 +122,7 @@ export default function ExplorePage() {
       setState("loading");
       try {
         const subverticais =
-          filterVertical === "all" ? null : [filterVertical];
+          filterInteresse === "all" ? null : [filterInteresse];
         const items = await fetchDiscovery(subverticais);
         if (cancelled) return;
         if (items.length === 0) {
@@ -136,7 +144,7 @@ export default function ExplorePage() {
     return () => {
       cancelled = true;
     };
-  }, [filterVertical]);
+  }, [filterInteresse]);
 
   const list = useMemo(() => {
     const sorted = [...profiles];
@@ -180,14 +188,14 @@ export default function ExplorePage() {
           <option value="nearby">Mais proximos</option>
         </select>
         <select
-          aria-label="Vertical"
-          value={filterVertical}
+          aria-label="Interesse"
+          value={filterInteresse}
           onChange={(e) =>
-            setFilterVertical(e.target.value as DiscoverySubvertical | "all")
+            setFilterInteresse(e.target.value as DiscoverySubvertical | "all")
           }
           className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
         >
-          <option value="all">Todas verticais</option>
+          <option value="all">Todos os interesses</option>
           {DISCOVERY_SUBVERTICALS.map((sv) => (
             <option key={sv.value} value={sv.value}>
               {sv.emoji} {sv.label}

@@ -259,7 +259,24 @@ export default function SegurancaOverviewPage() {
             KYC
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Funil de verificacao: aprovados, rejeitados, pendentes, expirados
+            Funil de verificacao e a fila de casos: aprovar, revogar, paginar
+          </p>
+        </Link>
+
+        {/* QA100-REL-06 — a curadoria nasceu sem porta. Sem um link aqui a
+            tela seria mais uma "rota que existe e ninguem acha", que e o
+            defeito PLT-13 catalogado na plataforma. */}
+        <Link
+          href="/admin/eventos"
+          className="p-6 rounded-lg border border-border hover:border-fuchsia-500 transition-colors group"
+          data-testid="link-curadoria-eventos"
+        >
+          <p className="text-2xl mb-2">🗓️</p>
+          <h3 className="font-semibold group-hover:text-fuchsia-600">
+            Curadoria de eventos
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Fila do curador: publicar, tirar do ar e arquivar evento do catalogo
           </p>
         </Link>
       </section>

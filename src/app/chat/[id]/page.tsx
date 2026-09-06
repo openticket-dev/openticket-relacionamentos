@@ -619,6 +619,13 @@ export default function ChatPage({
  * Some por completo (render null) quando nao ha matchId ou nao ha encontro
  * bookado: nada de card vazio prometendo o que nao existe. Erro aqui NAO
  * derruba o chat — e um bloco lateral, carregado de forma independente.
+ *
+ * QA100-REL-04 (06/09/2026) — o `catch` era mudo: zerava matchId e events e
+ * caia no mesmo `return null` do caso "nao ha encontro com ingresso". Query
+ * quebrada e ausencia legitima produziam a MESMA tela, entao ninguem nunca
+ * soube que o bloco de dinheiro tinha parado de carregar. Agora o erro tem
+ * estado proprio e aparece como um aviso discreto com "tentar de novo": o
+ * chat continua de pe (o bloco e lateral) e o defeito para de ser invisivel.
  */
 function ComprarJuntosSection({
   conversationId,
@@ -635,6 +642,8 @@ function ComprarJuntosSection({
       ticketingEventId: string | null;
     }>
   >([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -662,11 +671,18 @@ function ComprarJuntosSection({
         setEvents(
           (evtRes.partnerEvents ?? []).filter((e) => !!e.ticketingEventId),
         );
-      } catch {
-        // Silencioso de proposito: sem encontro pareado o chat segue igual.
+        setLoadError(null);
+      } catch (err) {
+        // NAO e mais silencioso: sem isto, falha de rede virava "nao ha
+        // encontro", que e a mesma tela e nao gera nenhum sinal.
         if (!cancelled) {
           setMatchId(null);
           setEvents([]);
+          setLoadError(
+            err instanceof Error
+              ? err.message
+              : "Falha ao carregar a sugestão de ingresso",
+          );
         }
       }
     }
@@ -674,7 +690,29 @@ function ComprarJuntosSection({
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, reloadKey]);
+
+  if (loadError) {
+    return (
+      <div
+        className="px-4 py-3 border-b border-border"
+        role="alert"
+        data-testid="comprar-juntos-erro"
+      >
+        <p className="text-[11px] text-rose-600 dark:text-rose-400">
+          Não foi possível carregar a sugestão de ingresso para vocês dois.
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-1 text-[11px] underline text-muted-foreground hover:text-foreground"
+        >
+          Tentar de novo
+        </button>
+      </div>
+    );
+  }
 
   if (!matchId || events.length === 0) return null;
 
