@@ -127,7 +127,14 @@ export default function AdminDashboardPage() {
     load();
   }, [load]);
 
-  const kpi = (value: number) => (state === "loading" ? "…" : value);
+  // TELA QUE MENTE (corrigido): o kpi so tratava "loading". No estado de erro
+  // `data` fica null e cada tile caia no `?? 0` do callsite — a tela imprimia
+  // "Denuncias 0 · Banidos ativos 0 · Fila de fotos 0 · Fila de curadoria 0"
+  // depois de a query ter FALHADO. Zero aqui nao e "nao ha o que moderar", e
+  // "nao sei" — e num painel de Trust & Safety os dois se leem igual. Sem dado
+  // confirmado o tile mostra "—", como os tiles de panico ja faziam.
+  const kpi = (value: number) =>
+    state === "loading" ? "…" : state === "ready" && data ? value : "—";
 
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">

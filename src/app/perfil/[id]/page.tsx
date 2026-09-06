@@ -101,7 +101,16 @@ export default function ProfileByIdPage({
     };
   }, [id]);
 
-  const compatibility = profile?.compatibility ?? 0.7;
+  // TELA QUE MENTE (corrigido): aqui havia `profile?.compatibility ?? 0.7`.
+  // O campo e `compatibility: number | null` — quando o gateway nao calcula o
+  // score, o fallback 0.7 fazia a tela imprimir "70% compativel" e dizer a
+  // mesma coisa no aria-label. Numero escrito pelo front, lido pelo usuario
+  // como veredito do algoritmo, numa vertical que cobra por revelacao de lead.
+  // Agora: score nulo => nao ha selo e nao ha porcentagem em lugar nenhum.
+  // O coracao 3D continua batendo no ritmo padrao dele (decoracao, nao dado).
+  const compatibility = profile?.compatibility ?? null;
+  const compatibilityPct =
+    compatibility != null ? Math.round(compatibility * 100) : null;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-white">
@@ -167,15 +176,23 @@ export default function ProfileByIdPage({
             {/* Heart Pulse 3D — pulsa proporcional a compatibilidade */}
             <div className="relative">
               <HeartPulse3D
-                compatibility={compatibility}
-                ariaLabel={`Compatibilidade de ${Math.round(
-                  compatibility * 100,
-                )} porcento com ${profile.displayName}`}
+                {...(compatibility != null ? { compatibility } : {})}
+                ariaLabel={
+                  compatibilityPct != null
+                    ? `Compatibilidade de ${compatibilityPct} porcento com ${profile.displayName}`
+                    : `Perfil de ${profile.displayName}. Compatibilidade ainda nao calculada.`
+                }
                 className="h-72 sm:h-80 w-full bg-gradient-to-br from-fuchsia-950/40 via-rose-950/30 to-zinc-950/60"
               />
-              <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-fuchsia-700/50 text-xs font-semibold text-fuchsia-200">
-                {Math.round(compatibility * 100)}% compativel
-              </div>
+              {compatibilityPct != null ? (
+                <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-fuchsia-700/50 text-xs font-semibold text-fuchsia-200">
+                  {compatibilityPct}% compativel
+                </div>
+              ) : (
+                <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-zinc-700 text-xs font-medium text-zinc-300">
+                  Compatibilidade nao calculada
+                </div>
+              )}
             </div>
 
             {/* Profile content */}

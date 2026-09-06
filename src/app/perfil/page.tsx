@@ -83,7 +83,13 @@ export default function PerfilPage() {
     return { slug, label: sv ? sv.label : slug, emoji: sv ? sv.emoji : "•" };
   });
 
-  const completeness = profile?.completeness ?? 0;
+  // TELA QUE MENTE (corrigido): era `profile?.completeness ?? 0`, e o bloco de
+  // completude renderiza ACIMA dos estados de loading/erro/vazio. Enquanto
+  // carregava, e principalmente quando a query FALHAVA, a tela afirmava
+  // "Completude do perfil: 0%" com a barra zerada pra quem tem o perfil
+  // cheio. Sem numero confirmado o bloco nao mostra numero nenhum.
+  const completeness =
+    typeof profile?.completeness === "number" ? profile.completeness : null;
   const coverPhoto =
     profile?.photos?.find((p) => p.isPrimary)?.url ??
     profile?.photos?.[0]?.url ??
@@ -118,24 +124,39 @@ export default function PerfilPage() {
       <section className="mb-6 p-4 rounded-xl border border-border bg-muted/30">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">
-            Completude do perfil: {completeness}%
+            {completeness != null
+              ? `Completude do perfil: ${completeness}%`
+              : loading
+                ? "Completude do perfil: calculando..."
+                : "Completude do perfil: nao disponivel"}
           </span>
+          {/* TELA QUE MENTE (corrigido): dizia "Perfil completo recebe ate 3x
+              mais matches". O "3x" nao sai de medicao nenhuma — nao ha metrica
+              de conversao por completude neste app, e completude nem sequer e
+              fator do ranking (os pesos reais estao em /admin/algoritmo:
+              diversidade, subvertical, mesmo evento, premium, perfil novo,
+              decaimento de visto, atividade — completude nao esta la). Ficou a
+              frase que e verdadeira por construcao: e o que os outros veem. */}
           <span className="text-xs text-muted-foreground">
-            Perfil completo recebe ate 3x mais matches
+            E isto que os outros veem do seu perfil
           </span>
         </div>
-        <div
-          className="h-2 rounded-full bg-muted overflow-hidden"
-          role="progressbar"
-          aria-valuenow={completeness}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
+        {completeness != null ? (
           <div
-            className="h-full bg-fuchsia-600 transition-all"
-            style={{ width: `${completeness}%` }}
-          />
-        </div>
+            className="h-2 rounded-full bg-muted overflow-hidden"
+            role="progressbar"
+            aria-valuenow={completeness}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-fuchsia-600 transition-all"
+              style={{ width: `${completeness}%` }}
+            />
+          </div>
+        ) : (
+          <div className="h-2 rounded-full bg-muted overflow-hidden" />
+        )}
       </section>
 
       {loading ? (

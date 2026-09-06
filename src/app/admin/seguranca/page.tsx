@@ -115,8 +115,12 @@ export default function SegurancaOverviewPage() {
     load();
   }, [load]);
 
+  // TELA QUE MENTE (corrigido): igual ao /admin/dashboard — o kpi so tratava
+  // "loading", entao no erro `data` era null, cada tile caia no `?? 0` do
+  // callsite e a tela dizia "Denuncias 0 · Banidos ativos 0 · Alertas panico 0"
+  // com a query quebrada. Sem dado confirmado o tile mostra "—".
   const kpi = (value: number | string) =>
-    state === "loading" ? "…" : value;
+    state === "loading" ? "…" : state === "ready" && data ? value : "—";
 
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">
@@ -130,13 +134,23 @@ export default function SegurancaOverviewPage() {
         <div className="flex items-center justify-between mt-2">
           <div>
             <h1 className="text-2xl font-semibold">Seguranca & Moderacao</h1>
+            {/* TELA QUE MENTE (corrigido), dois pedacos:
+                1) "RBAC role: trust_safety." era uma afirmacao sobre QUEM esta
+                   olhando, cravada no JSX sem nunca ler a sessao — renderizava
+                   identica pra qualquer visitante. O /admin/dashboard ja tinha
+                   matado a mesma frase; esta ficou. Trocada por uma frase sobre
+                   o ENDPOINT, que e verificavel: as queries deste painel vivem
+                   no PlatformModerationResolver atras de RolesGuard, e quem nao
+                   tem o papel recebe erro do gateway e cai no estado de erro.
+                2) o ponto verde + "LGPD compliance ativo" era um semaforo que
+                   nao media nada: nenhuma query, nenhum flag, sempre verde.
+                   Semaforo verde inventado num painel de compliance e o pior
+                   tipo de status falso — some. O log imutavel de auditoria, que
+                   e o instrumento REAL de LGPD, continua linkado abaixo. */}
             <p className="text-sm text-muted-foreground mt-1">
-              Trust & Safety dashboard. RBAC role: trust_safety.
+              Trust & Safety. Os dados abaixo exigem papel de moderacao no
+              gateway — sem ele as queries falham e o painel entra em erro.
             </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            LGPD compliance ativo
           </div>
         </div>
       </header>
